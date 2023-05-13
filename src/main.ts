@@ -10,9 +10,14 @@ import {
 import {
 	PluginSettings,
 	DEFAULT_SETTINGS,
-} from "./settings";
+} from './settings';
 
 import { ExportModal } from './modal';
+import {
+    electronEncrypt,
+    electronDecrypt,
+} from './utils/enc';
+import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
 
 export default class AutoAnkiPlugin extends Plugin {
 	settings: PluginSettings;
@@ -24,16 +29,18 @@ export default class AutoAnkiPlugin extends Plugin {
 		this.addSettingTab(new AutoAnkiSettingTab(this.app, this));
 
 		this.addCommand({
-			id: "export-current-file-to-anki",
-			name: "Export Current File to Anki",
+			id: 'export-current-file-to-anki',
+			name: 'Export Current File to Anki',
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
-				if (view.data.length > 0) {
+				if (this.settings.openAiApiKey != null && view.data.length > 0) {
 					if (!checking) {
+                        const apiKey = electronDecrypt(this.settings.openAiApiKey);
+                        const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 						new ExportModal(
 							this.app,
 							view.data,
-							this.settings.openAiApiKey,
-							this.settings.ankiConnectPort,
+							apiKey,
+							port,
 							this.settings.ankiDestinationDeck,
 							5,
 						).open();
@@ -45,17 +52,19 @@ export default class AutoAnkiPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "export-text-selection-to-anki",
-			name: "Export Current Text Selection to Anki",
+			id: 'export-text-selection-to-anki',
+			name: 'Export Current Text Selection to Anki',
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				const currTextSelection = editor.getSelection();
-				if (currTextSelection.length > 0) {
+				if (this.settings.openAiApiKey != null && currTextSelection.length > 0) {
 					if (!checking) {
+                        const apiKey = electronDecrypt(this.settings.openAiApiKey);
+                        const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 						new ExportModal(
 							this.app,
 							currTextSelection,
-							this.settings.openAiApiKey,
-							this.settings.ankiConnectPort,
+							apiKey,
+							port,
 							this.settings.ankiDestinationDeck,
 							2,
 						).open();
@@ -128,14 +137,23 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		openAiDescHtml.innerHTML = 'The API Key associated with your OpenAI account, used for querying GPT. Go <a href="https://platform.openai.com/account/api-keys">here</a> to obtain one.';
 		openAiDescription.appendChild(openAiDescHtml);
 
+        let apiPlaceholder = 'sk-xxxx';
+        if (this.plugin.settings.openAiApiKeyIdentifier.length) {
+            apiPlaceholder =`sk-...${this.plugin.settings.openAiApiKeyIdentifier}`;
+        }
+        else {
+            apiPlaceholder = 'xxxx'
+        }
+
 		new Setting(containerEl)
 			.setName('OpenAI API Key')
 			.setDesc(openAiDescription)
 			.addText(textComponent => textComponent
-				.setPlaceholder('')
-				.setValue(String(this.plugin.settings.openAiApiKey))
+				.setPlaceholder(apiPlaceholder)
+				// .setValue()
 				.onChange(async (value) => {
-					this.plugin.settings.openAiApiKey = value;
+					this.plugin.settings.openAiApiKey = electronEncrypt(value);
+                    this.plugin.settings.openAiApiKeyIdentifier = value.length >= 4 ? value.slice(-4): 'xxxx';
 					await this.plugin.saveSettings();
 				})
 			);

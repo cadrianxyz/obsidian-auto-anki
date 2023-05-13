@@ -6,6 +6,8 @@ import {
 } from './gpt';
 
 const ANKI_VERSION = 6;
+// const ANKI_DEFAULT_DECK = 'Default';
+export const ANKI_CONNECT_DEFAULT_PORT = 8765;
 
 async function getAnkiDeck(ankiPort: number, deck: string) {
     let res;
@@ -22,14 +24,14 @@ async function getAnkiDeck(ankiPort: number, deck: string) {
         });
     }
     catch (err) {
-        new Notice('ERR: Could not connect to Anki! Please ensure you have Anki Connect running.');
+        new Notice(`ERR: Could not connect to Anki! Please ensure you have Anki Connect running on port ${ankiPort}.`);
         return '';
     }
 
     const decks = res.json.result as Array<string>;
     // use default deck if not specified
     if (deck === '' && decks.length > 0) {
-        new Notice(`Anki deck name not specified in settings. Using default deck: '${decks[0]}'`);
+        new Notice(`Anki deck name not specified in settings. Using existing deck: '${decks[0]}'`);
         return decks[0];
     }
 
