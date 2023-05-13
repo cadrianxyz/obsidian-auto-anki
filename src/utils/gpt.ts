@@ -6,6 +6,15 @@ export interface CardInformation {
     answer: string;
 }
 
+export function checkGpt(openAiKey: string) {
+    // check gpt api key
+    if (openAiKey === '') {
+        new Notice("ERR: OpenAI API key not provided! Please go to your 'Simple Recall' settings to set an API key.")
+        return false;
+    }
+    return true;
+}
+
 function createPrompt(notes: string, num: number) {
     let finalPrompt = 'The following are notes on a specific topic, written in markdown.';
     finalPrompt += `\n${notes.trim()}\n`;

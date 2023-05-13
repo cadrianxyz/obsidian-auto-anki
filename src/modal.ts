@@ -1,5 +1,6 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { exportToAnki } from './utils/anki';
+import { CardInformation, checkGpt, convertNotesToFlashcards } from './utils/gpt';
 
 function checkValidNumGreaterThanZero(text: string|number) {
     return text != '' && !isNaN(+text) && +text > 0;
@@ -50,18 +51,26 @@ export class ExportModal extends Modal {
                 btn
                 .setButtonText('Export')
                 .setCta()
-                .onClick(() => {
+                .onClick(async () => {
                     if (!this.n_q_valid) {
                         new Notice('Not a valid number!');
                         return;
                     }
                     this.close();
-                    exportToAnki(
-                        this.data,
+
+                    let isRequestValid = false;
+                    isRequestValid = checkGpt(this.apiKey);
+
+                    if (!isRequestValid) return;
+                    const cards: Array<CardInformation> = await convertNotesToFlashcards(
                         this.apiKey,
+                        this.data,
+                        this.n_q
+                    );
+                    exportToAnki(
+                        cards,
                         this.port,
                         this.deck,
-                        this.n_q,
                     );
                 })
             );

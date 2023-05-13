@@ -1,9 +1,6 @@
 import { Notice, requestUrl } from 'obsidian';
 
-import {
-    CardInformation,
-    convertNotesToFlashcards,
-} from './gpt';
+import { CardInformation } from './gpt';
 
 const ANKI_VERSION = 6;
 // const ANKI_DEFAULT_DECK = 'Default';
@@ -77,18 +74,12 @@ async function addCardsToAnki(ankiPort: number, deck: string, data: Array<CardIn
     }
 }
 
-export async function exportToAnki(data: string, openAiKey: string, port: number, deck: string, numCards: number) {
+export async function exportToAnki(cards: Array<CardInformation>, port: number, deck: string) {
     // check anki connection and deck
     const d = await getAnkiDeck(port, deck);
     if (d === '') return false;
 
-    // check gpt api key
-    if (openAiKey === '') {
-        new Notice("ERR: OpenAI API key not provided! Please go to your 'Simple Recall' settings to set an API key.")
-    }
-
     // turn note into Q&A format using GPT
-    const cards: Array<CardInformation> = await convertNotesToFlashcards(openAiKey, data, numCards);
     const ankiRes: Array<number> = await addCardsToAnki(port, d, cards);
     if (ankiRes.length > 0) new Notice(`Successfully exported ${ankiRes.length} cards to Anki!`)
     return true;
