@@ -137,23 +137,18 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		openAiDescHtml.innerHTML = 'The API Key associated with your OpenAI account, used for querying GPT. Go <a href="https://platform.openai.com/account/api-keys">here</a> to obtain one.';
 		openAiDescription.appendChild(openAiDescHtml);
 
-        let apiPlaceholder = 'sk-xxxx';
-        if (this.plugin.settings.openAiApiKeyIdentifier.length) {
-            apiPlaceholder =`sk-...${this.plugin.settings.openAiApiKeyIdentifier}`;
-        }
-        else {
-            apiPlaceholder = 'xxxx'
-        }
-
 		new Setting(containerEl)
 			.setName('OpenAI API Key')
 			.setDesc(openAiDescription)
 			.addText(textComponent => textComponent
-				.setPlaceholder(apiPlaceholder)
-				// .setValue()
+				.setPlaceholder(this.plugin.settings.openAiApiKeyIdentifier ?? 'sk-xxx')
 				.onChange(async (value) => {
 					this.plugin.settings.openAiApiKey = electronEncrypt(value);
-                    this.plugin.settings.openAiApiKeyIdentifier = value.length >= 4 ? value.slice(-4): 'xxxx';
+                    let identifier = 'xxxx';
+                    if (value.length >= 7) {
+                        identifier = `${value.slice(0,3)}...${value.slice(-4)}`
+                    }
+                    this.plugin.settings.openAiApiKeyIdentifier = identifier;
 					await this.plugin.saveSettings();
 				})
 			);

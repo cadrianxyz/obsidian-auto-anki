@@ -6,3 +6,10 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.enabled {
+    opacity: 1;
+}
+.disabled {
+    opacity: 0.5;
+}
