@@ -1,95 +1,69 @@
-# Obsidian Sample Plugin
+# Obsidian Auto Anki
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Plugin for [Obsidian.md](https://obsidian.md/) that uses OpenAI's GPT LLM to automatically generate Flashcards for Anki.
 
-This project uses Typescript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in Typescript Definition format, which contains TSDoc comments describing what it does.
+> The plugin **only works for desktop** (tested on a Mac M1).
 
-**Note:** The Obsidian API is still in early alpha and is subject to change at any time!
+The plugin introduces two new commands into obsidian:
+- _Export Current File to Anki_
+- _Export Highlighted Text to Anki_
+These commands will **not** be avaialable if you do not have an active `Editable` window open (i.e. you need to have a document open, and it needs to be in `edit` mode).
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open Sample Modal" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+The command palette can be accessed on Obsidian through the following hotkey (default): `CMD` + `P`
 
-## First time developing plugins?
+![command-palette-hotkey](media/command-palette-hotkey.png).
 
-Quick starting guide for new plugin devs:
+If desired, you can set your own hotkeys for the new commands.
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+The two new commands look like the following:
 
-## Releasing new releases
+![command-palette-new-commands](media/command-palette-new-commands.png)
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### Plugin Requirements
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+The following are required for the Plugin to work:
+- An [OpenAI](https://openai.com/) Account and an [OpenAI API Key](https://platform.openai.com/account/api-keys)
+- The [Anki](https://apps.ankiweb.net/) program, installed locally
+- [Anki Connect](https://github.com/FooSoft/anki-connect), to expose an Anki API for Obsidian to make calls to
 
-## Adding your plugin to the community plugin list
+### Plugin Setup
 
-- Check https://github.com/obsidianmd/obsidian-releases/blob/master/plugin-review.md
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+1. Download and install the plugin (Options > Community Plugins)
+2. Ensure that you have all the requirements in the [Plugin Requirements](#plugin-requirements)
+3. Go to the Plugin Settings (Settings > Community Plugins > Auto Anki) and make sure to set the following fields appropriately:
+  - Anki Port (by default, this is `8765`)
+  - Anki Deck Name (by default, this is `Default`)
+  - OpenAI API Key
+4. Enjoy!
 
-## How to use
+### Feature Details
 
-- Clone this repo.
-- `npm i` or `yarn` to install dependencies
-- `npm run dev` to start compilation in watch mode.
+- Exporting an Entire File to Anki (Command: _Export Current File to Anki_)
+This command allows you to use the contents of the currently-opened file to sends to GPT and generate a list of questions and answers.
 
-## Manually installing the plugin
+![prompt-1](media/prompt-1.png)
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+Alternatively, you can also specify the _number of alternatives_ to generate for each question. This allows you more variety in the "questions and answers" generated by GPT, as it allows you to choose among a larger number of alternative "questions and answers"
 
-## Improve code quality with eslint (optional)
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- To use eslint with this project, make sure to install eslint from terminal:
-  - `npm install -g eslint`
-- To use eslint to analyze this project use this command:
-  - `eslint main.ts`
-  - eslint will then create a report with suggestions for code improvement by file and line number.
-- If your source code is in a folder, such as `src`, you can use eslint with this command to analyze all files in that folder:
-  - `eslint .\src\`
+![prompt-2](media/prompt-2.png)
 
-## Funding URL
+From the generated list of "questions and answers", you have the option to pick and choose the ones you want.
 
-You can include funding URLs where people who use your plugin can financially support it.
+After picking and choosing, your selected "questions and answers" automatically imports the chosen questions to Anki, based on the details in your Plugin settings. (Important Note: file needs to be in `edit` mode for the command to be available).
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+> It may take a while if you are generating a large number of questions, or a large number of alternatives. Future plan is to improve the UI interactions to make this more obvious and seamless.
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
-```
+- Exporting Highlighted Text to Anki (Command: _Export Highlighted Text to Anki_)
+This command is similar to "Exporting an Entire File to Anki", but this allows you to use the currently-highlighted text (instead of the whole file) to send to GPT and generate a list of questions and questions. (Important Note: file also needs to be in `edit` mode for the command to be available).
 
-If you have multiple URLs, you can also do:
+### Motivation
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+With the kajillion things I read and watch on a daily basis, I've recently found myself struggling to retain knowledge of the things I've consumed. Hence, I've found myself trying to find new ways to enhance my self-education. I came upon [Spaced Repetition](https://en.wikipedia.org/wiki/Spaced_repetition), and wanted to try to use [Anki](https://apps.ankiweb.net/) to supplement my daily learnings. Being a long-time user and lover of [Obsidian.md](https://obsidian.md/) as my PKM (Personal Knowledge Management), I wanted to see if there was a way to automate my learning using spaced repetition with my current Obsidian vaults.
 
-## API Documentation
+I looked at other [similar plugins](https://github.com/Pseudonium/Obsidian_to_Anki) that attempt to connect Obsidian to Anki, but a lot of require you to change how you write your notes in Obsidian, or just don't seem automated enough. What this plugin does is automate the creation of ["flashcard-style" questions and answers](https://en.wikipedia.org/wiki/Leitner_system) but without needing to format your notes for this purpose.
 
-See https://github.com/obsidianmd/obsidian-api
+I consider myself a complete beginner when it comes to Spaced Repetition, Anki, or the general world of learning techniques, so I am always very open to suggestions, discussions, or any comments about the topic!
+
+## Issues, Discussion, etc
+
+I keep track of all things related to this plugin mostly in [issues](https://github.com/ad2969/obsidian-auto-anki/issues). Feel free to report bugs and/or requests there!

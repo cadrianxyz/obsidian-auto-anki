@@ -4,7 +4,7 @@ import { CardInformation, checkGpt, convertNotesToFlashcards } from './utils/gpt
 import { GptAdvancedOptions } from './settings';
 
 // TODO: REMOVE
-// import { SAMPLE_CARD_INFORMATION } from 'sample_card_information';
+// import { SAMPLE_CARD_INFORMATION } from 'sample/sample_card_information';
 
 function checkValidNumGreaterThanZero(text: string|number, inclusiveZero?: boolean) {
     if (inclusiveZero) return text != '' && !isNaN(+text) && +text >= 0;

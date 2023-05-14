@@ -43,11 +43,11 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	questionGenerationDefaults: {
 		textSelection: {
 			numQuestions: 1,
-			numAlternatives: 1,
+			numAlternatives: 0,
 		},
 		file: {
 			numQuestions: 5,
-			numAlternatives: 2,
+			numAlternatives: 0,
 		},
 	},
 }

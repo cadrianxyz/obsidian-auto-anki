@@ -57,7 +57,7 @@ export default class AutoAnkiPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'export-text-selection-to-anki',
-			name: 'Export Current Text Selection to Anki',
+			name: 'Export Highlighted Text to Anki',
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				const currTextSelection = editor.getSelection();
 				if (this.settings.openAiApiKey != null && currTextSelection.length > 0) {
@@ -107,7 +107,6 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		
 		containerEl.empty();
-		containerEl.createEl('h2', { text: 'Auto Anki Settings.' });
 
 		const ankiDescription = document.createElement('div');
         // use innerHTML for harcoded description
@@ -160,9 +159,9 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 				})
 			);
 
-        containerEl.createEl('h3', { text: 'Default Options for Exporting' });
+        containerEl.createEl('h2', { text: 'Default Options for Exporting' });
 
-        containerEl.createEl('h4', { text: 'For exporting full files' });
+        containerEl.createEl('p', { text: '--> For exporting full files' });
         
 		new Setting(containerEl)
             .setName('Number of Questions')
@@ -186,7 +185,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 				})
 			);
 
-        containerEl.createEl('h4', { text: 'For exporting selected text' });
+        containerEl.createEl('p', { text: '--> For exporting selected text' });
         
 		new Setting(containerEl)
             .setName('Number of Questions')
