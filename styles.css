@@ -20,8 +20,33 @@ If your plugin does not need CSS, delete this file.
     justify-content: space-between;
 }
 
+.modal-buttons > div > *:first-child {
+    /* overwrite setting-item style */
+    margin: 0;
+}
+
 .slider-val {
     margin-left: 0.5rem;
     width: 3.5rem;
     text-align: end;
+}
+
+.question-options-container {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.question-option {
+    padding: 0.5rem 1rem;
+    margin: 1rem 0rem;
+    background: var(--background-secondary);
+    color: black;
+    border: 1px solid rgb(0, 0, 0, 0.1);
+    border-radius: 1rem;
+}
+
+.question-option.--selected {
+    background: var(--color-accent);
+    color: var(--text-on-accent);
 }

@@ -132,15 +132,16 @@ class QuestionSetWithSelections {
 
     renderHtmlList() {
         const htmlList = createEl('ul');
+        htmlList.className = 'question-options-container'
         this.questions.forEach((q: CardInformation, idx: number) => {
             const htmlQuestion = createEl('li');
             htmlQuestion.appendChild(createEl('h3', { text: q.question }));
             htmlQuestion.appendChild(createEl('p', { text: q.answer }));
             if (this.selected.has(idx)) {
-                htmlQuestion.style.color = 'red';
+                htmlQuestion.className = 'question-option --selected'
             }
             else {
-                htmlQuestion.style.color = 'black';
+                htmlQuestion.className = 'question-option'
             }
             htmlQuestion.onclick = () => { this.toggleSelect(idx) };
             htmlList.appendChild(htmlQuestion);
