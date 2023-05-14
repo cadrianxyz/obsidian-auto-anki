@@ -28,7 +28,7 @@ export async function convertNotesToFlashcards(
     apiKey: string,
     notes: string,
     num_q: number,
-    num_alt: number,
+    num: number,
 ) {
     let response;
     try {
@@ -44,7 +44,7 @@ export async function convertNotesToFlashcards(
             top_p: 1.0,
             frequency_penalty: 0.0,
             presence_penalty: 0.0,
-            n: num_alt,
+            n: num,
         });
     }
     catch (err) {

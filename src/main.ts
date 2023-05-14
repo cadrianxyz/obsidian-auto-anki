@@ -43,6 +43,7 @@ export default class AutoAnkiPlugin extends Plugin {
 							port,
 							this.settings.ankiDestinationDeck,
 							5,
+                            3,
 						).open();
 					}
 					return true
@@ -66,7 +67,8 @@ export default class AutoAnkiPlugin extends Plugin {
 							apiKey,
 							port,
 							this.settings.ankiDestinationDeck,
-							2,
+							1,
+                            1,
 						).open();
 					}
 					return true;
