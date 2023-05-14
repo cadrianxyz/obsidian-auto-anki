@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 import { Configuration, OpenAIApi } from 'openai';
+import { GptAdvancedOptions } from 'src/settings';
 
 export interface CardInformation {
     question: string;
@@ -29,26 +30,29 @@ export async function convertNotesToFlashcards(
     notes: string,
     num_q: number,
     num: number,
+    options: GptAdvancedOptions,
 ) {
     let response;
     try {
         const config = new Configuration({ apiKey });
         const openai = new OpenAIApi(config);
+
+        const {
+            max_tokens_per_question: tokensPerQuestion,
+            ...completionOptions
+        } = options;
     
         // for anki connect, the output
         response = await openai.createCompletion({
             model: 'text-davinci-003',
             prompt: createPrompt(notes, num_q),
-            temperature: 0.3,
-            max_tokens: 150 * num_q,
-            top_p: 1.0,
-            frequency_penalty: 0.0,
-            presence_penalty: 0.0,
+            max_tokens: tokensPerQuestion * num_q,
             n: num,
+            ...completionOptions,
         });
     }
     catch (err) {
-        if (err.isAxiosError) {
+        if (!err.response) {
             new Notice(`ERR: Could not connect to OpenAI! ${err.message}`);
         }
         else {

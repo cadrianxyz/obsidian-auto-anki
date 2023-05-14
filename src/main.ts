@@ -4,7 +4,7 @@ import {
 	MarkdownView,
 	Plugin,
 	PluginSettingTab,
-	Setting
+	Setting,
 } from 'obsidian';
 
 import {
@@ -27,6 +27,8 @@ export default class AutoAnkiPlugin extends Plugin {
 		await this.loadSettings();
 				
 		this.addSettingTab(new AutoAnkiSettingTab(this.app, this));
+        const defaults = this.settings.questionGenerationDefaults;
+        const { textSelection: defaultsTextSelection, file: defaultsFile } = defaults;
 
 		this.addCommand({
 			id: 'export-current-file-to-anki',
@@ -42,8 +44,9 @@ export default class AutoAnkiPlugin extends Plugin {
 							apiKey,
 							port,
 							this.settings.ankiDestinationDeck,
-							5,
-                            3,
+                            this.settings.gptAdvancedOptions,
+							defaultsFile.numQuestions,
+                            defaultsFile.numAlternatives,
 						).open();
 					}
 					return true
@@ -67,8 +70,9 @@ export default class AutoAnkiPlugin extends Plugin {
 							apiKey,
 							port,
 							this.settings.ankiDestinationDeck,
-							1,
-                            1,
+                            this.settings.gptAdvancedOptions,
+							defaultsTextSelection.numQuestions,
+                            defaultsTextSelection.numAlternatives,
 						).open();
 					}
 					return true;
@@ -143,7 +147,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 			.setName('OpenAI API Key')
 			.setDesc(openAiDescription)
 			.addText(textComponent => textComponent
-				.setPlaceholder(this.plugin.settings.openAiApiKeyIdentifier ?? 'sk-xxx')
+				.setPlaceholder(this.plugin.settings.openAiApiKeyIdentifier ?? 'NO_KEY_ENTERED')
 				.onChange(async (value) => {
 					this.plugin.settings.openAiApiKey = electronEncrypt(value);
                     let identifier = 'xxxx';
@@ -154,5 +158,140 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				})
 			);
+
+        containerEl.createEl('h3', { text: 'Default Options for Exporting' });
+
+        containerEl.createEl('h4', { text: 'For exporting full files' });
+        
+		new Setting(containerEl)
+            .setName('Number of Questions')
+            .setDesc('The number of questions to generate from the file.')
+            .addText(textComponent => textComponent
+                .setValue(String(this.plugin.settings.questionGenerationDefaults.file.numQuestions))
+                .onChange(async (value) => {
+                    this.plugin.settings.questionGenerationDefaults.file.numQuestions = Number(value);
+                    await this.plugin.saveSettings();
+                })
+            );
+
+		new Setting(containerEl)
+			.setName('Number of Alternatives')
+			.setDesc('The number of alternatives to generate for each question. Zero means no alteratives.')
+			.addText(textComponent => textComponent
+				.setValue(String(this.plugin.settings.questionGenerationDefaults.file.numAlternatives))
+				.onChange(async (value) => {
+					this.plugin.settings.questionGenerationDefaults.file.numAlternatives = Number(value);
+					await this.plugin.saveSettings();
+				})
+			);
+
+        containerEl.createEl('h4', { text: 'For exporting selected text' });
+        
+		new Setting(containerEl)
+            .setName('Number of Questions')
+            .setDesc('The number of questions to generate from the selected text.')
+            .addText(textComponent => textComponent
+                .setValue(String(this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions))
+                .onChange(async (value) => {
+                    this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions = Number(value);
+                    await this.plugin.saveSettings();
+                })
+            );
+
+		new Setting(containerEl)
+			.setName('Number of Alternatives')
+			.setDesc('The number of alternatives to generate for each question. Zero means no alteratives.')
+			.addText(textComponent => textComponent
+				.setValue(String(this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives))
+				.onChange(async (value) => {
+					this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives = Number(value);
+					await this.plugin.saveSettings();
+				})
+			);
+
+        containerEl.createEl('h2', { text: 'Advanced Options for OpenAI\'s GPT Models' });
+
+        // See OpenAI docs for more info:
+        // https://platform.openai.com/docs/api-reference/completions
+        const tempValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.temperature) });
+        tempValComponent.className = 'slider-val';
+        const tempComponent = new Setting(containerEl)
+            .setName('Temperature')
+            .setDesc('The sampling temperature used. Higher values increases randomness, while lower values makes the output more deterministic. (Default = 1)')
+            .addSlider(sliderComponent => sliderComponent
+                .setValue(this.plugin.settings.gptAdvancedOptions.temperature)
+                .setLimits(0, 2, 0.1)
+                .onChange(async (value) => {
+                    this.plugin.settings.gptAdvancedOptions.temperature = value;
+                    tempValComponent.textContent = String(value);
+                    await this.plugin.saveSettings();
+                })
+            );
+        tempComponent.settingEl.appendChild(tempValComponent);
+
+        const topPValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.top_p) });
+        topPValComponent.className = 'slider-val';
+        const topPComponent = new Setting(containerEl)
+            .setName('Top P')
+            .setDesc('Value for nucleus sampling. Lower values mean the output considers the tokens comprising higher probability mass. (Default = 1)')
+            .addSlider(sliderComponent => sliderComponent
+                .setValue(this.plugin.settings.gptAdvancedOptions.top_p)
+                .setLimits(0, 1, 0.05)
+                .onChange(async (value) => {
+                    this.plugin.settings.gptAdvancedOptions.top_p = value;
+                    topPValComponent.textContent = String(value);
+                    await this.plugin.saveSettings();
+                })
+            );
+        topPComponent.settingEl.appendChild(topPValComponent);
+
+        const fPenaltyValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.frequency_penalty) });
+        fPenaltyValComponent.className = 'slider-val';
+        const fPenaltyComponent = new Setting(containerEl)
+            .setName('Frequency Penalty')
+            .setDesc('Positive values penalize new tokens based on their existing frequency in the text so far. Higher values decrease chance of \'repetition\'. (Default = 0)')
+            .addSlider(sliderComponent => sliderComponent
+                .setValue(this.plugin.settings.gptAdvancedOptions.frequency_penalty)
+                .setLimits(-2, 2, 0.1)
+                .onChange(async (value) => {
+                    this.plugin.settings.gptAdvancedOptions.frequency_penalty = value;
+                    fPenaltyValComponent.textContent = String(value);
+                    await this.plugin.saveSettings();
+                })
+            );
+        fPenaltyComponent.settingEl.appendChild(fPenaltyValComponent);
+
+        const pPenaltyValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.presence_penalty) });
+        pPenaltyValComponent.className = 'slider-val';
+		const pPenaltyComponent = new Setting(containerEl)
+            .setName('Presence Penalty')
+            .setDesc('Positive values penalize new tokens based on whether they appear in the text so far. Higher values increase chance of \'creativity\'. (Default = 0)')
+            .addSlider(sliderComponent => sliderComponent
+                .setValue(this.plugin.settings.gptAdvancedOptions.presence_penalty)
+                .setLimits(-2, 2, 0.1)
+                .onChange(async (value) => {
+                    this.plugin.settings.gptAdvancedOptions.presence_penalty = value;
+                    pPenaltyValComponent.textContent = String(value);
+                    await this.plugin.saveSettings();
+                })
+            );
+        pPenaltyComponent.settingEl.appendChild(pPenaltyValComponent);
+
+
+        const openAiTokenDescription = new DocumentFragment();
+        const openAiTokenDescHtml = document.createElement('p');
+        openAiTokenDescHtml.innerHTML = 'The maximum number of tokens consumed for each question. See <a href="https://platform.openai.com/tokenizer">tokens</a> to better understand how tokens are quantized. (Default = 16)';
+        openAiTokenDescription.appendChild(openAiTokenDescHtml);
+
+        new Setting(containerEl)
+            .setName('Maximum Tokens per Question')
+            .setDesc(openAiTokenDescription)
+            .addText(textComponent => textComponent
+                .setValue(String(this.plugin.settings.gptAdvancedOptions.max_tokens_per_question))
+                .onChange(async (value) => {
+                    this.plugin.settings.gptAdvancedOptions.max_tokens_per_question = Number(value);
+                    await this.plugin.saveSettings();
+                })
+            );
 	}
 }

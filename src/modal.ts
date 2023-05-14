@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { exportToAnki } from './utils/anki';
 import { CardInformation, checkGpt, convertNotesToFlashcards } from './utils/gpt';
+import { GptAdvancedOptions } from './settings';
 
 // TODO: REMOVE
 // import { SAMPLE_CARD_INFORMATION } from 'sample_card_information';
@@ -18,6 +19,7 @@ export class ExportModal extends Modal {
     apiKey: string;
     port: number;
     deck: string;
+    gptAdvancedOptions: GptAdvancedOptions;
     
     constructor(
         app: App,
@@ -25,6 +27,7 @@ export class ExportModal extends Modal {
         openAiApiKey: string,
         ankiConnectPort: number,
         ankiDestinationDeck: string,
+        gptAdvancedOptions: GptAdvancedOptions,
         dafaultNumQuestions?: number,
         defaultNumAlternatives?: number,
     ) {
@@ -33,6 +36,7 @@ export class ExportModal extends Modal {
         this.apiKey = openAiApiKey;
         this.port = ankiConnectPort;
         this.deck = ankiDestinationDeck;
+        this.gptAdvancedOptions = gptAdvancedOptions;
 
         this.n_q = dafaultNumQuestions ?? 5;
         this.n_q_valid = checkValidNumGreaterThanZero(this.n_q);
@@ -87,7 +91,9 @@ export class ExportModal extends Modal {
                         this.data,
                         this.n_q,
                         this.n_alt+1,
+                        this.gptAdvancedOptions,
                     );
+                    if (card_sets.length === 0) return;
                     new ChoiceModal(
                         this.app,
                         card_sets,

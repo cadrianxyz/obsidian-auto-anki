@@ -19,3 +19,9 @@ If your plugin does not need CSS, delete this file.
     flex-direction: row;
     justify-content: space-between;
 }
+
+.slider-val {
+    margin-left: 0.5rem;
+    width: 3.5rem;
+    text-align: end;
+}
