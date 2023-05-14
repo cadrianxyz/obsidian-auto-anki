@@ -214,7 +214,7 @@ export class ChoiceModal extends Modal {
 
     renderContent() {
         const { contentEl } = this;
-        contentEl.innerHTML = ''; // reset content
+        contentEl.innerHTML = ''; // use innerHTML to reset content
 
         // modal title, description
         if (this.n_sets === 1) {

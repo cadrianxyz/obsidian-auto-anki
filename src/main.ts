@@ -110,9 +110,9 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		containerEl.createEl('h2', { text: 'Auto Anki Settings.' });
 
 		const ankiDescription = document.createElement('div');
+        // use innerHTML for harcoded description
 		ankiDescription.innerHTML = '<p><a href="https://apps.ankiweb.net/">Anki</a> is an open-source flashcard program that is popular for spaced repetition. This plugin has only been tested on desktop, and requires <a href="https://foosoft.net/projects/anki-connect/">Anki Connect</a> to be installed alongside the main Anki program.</p><p>Enabling this plugin will add commands to automatically generate Question-Answer-style flashcards into the Anki system using OpenAI\'s AI models.</p>';
-        const desc = containerEl.createEl('div')
-        desc.appendChild(ankiDescription)
+        containerEl.appendChild(ankiDescription)
 		
 		new Setting(containerEl)
 			.setName('Anki Port')
@@ -140,6 +140,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		
 		const openAiDescription = new DocumentFragment();
 		const openAiDescHtml = document.createElement('p');
+        // use innerHTML for harcoded description
 		openAiDescHtml.innerHTML = 'The API Key associated with your OpenAI account, used for querying GPT. Go <a href="https://platform.openai.com/account/api-keys">here</a> to obtain one.';
 		openAiDescription.appendChild(openAiDescHtml);
 
@@ -214,7 +215,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
         // See OpenAI docs for more info:
         // https://platform.openai.com/docs/api-reference/completions
         const tempValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.temperature) });
-        tempValComponent.className = 'slider-val';
+        tempValComponent.className = 'slider-val'; // used to make custom slider component with displayed value next to it
         const tempComponent = new Setting(containerEl)
             .setName('Temperature')
             .setDesc('The sampling temperature used. Higher values increases randomness, while lower values makes the output more deterministic. (Default = 1)')
@@ -280,6 +281,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 
         const openAiTokenDescription = new DocumentFragment();
         const openAiTokenDescHtml = document.createElement('p');
+        // use innerHTML for harcoded description
         openAiTokenDescHtml.innerHTML = 'The maximum number of tokens consumed for each question. See <a href="https://platform.openai.com/tokenizer">tokens</a> to better understand how tokens are quantized. (Default = 16)';
         openAiTokenDescription.appendChild(openAiTokenDescHtml);
 
