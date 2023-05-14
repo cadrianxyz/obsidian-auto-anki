@@ -13,3 +13,9 @@ If your plugin does not need CSS, delete this file.
 .disabled {
     opacity: 0.5;
 }
+
+.modal-buttons {
+    display:flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
