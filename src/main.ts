@@ -5,6 +5,7 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	Notice,
 } from 'obsidian';
 
 import {
@@ -18,6 +19,7 @@ import {
     electronDecrypt,
 } from './utils/enc';
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
+import { isNumeric } from './utils/utils';
 
 export default class AutoAnkiPlugin extends Plugin {
 	settings: PluginSettings;
@@ -147,7 +149,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 			.setName('OpenAI API Key')
 			.setDesc(openAiDescription)
 			.addText(textComponent => textComponent
-				.setPlaceholder(this.plugin.settings.openAiApiKeyIdentifier ?? 'NO_KEY_ENTERED')
+				.setPlaceholder(`key entered: ${this.plugin.settings.openAiApiKeyIdentifier}` ?? 'NO_KEY_ENTERED')
 				.onChange(async (value) => {
 					this.plugin.settings.openAiApiKey = electronEncrypt(value);
                     let identifier = 'xxxx';
@@ -169,8 +171,17 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             .addText(textComponent => textComponent
                 .setValue(String(this.plugin.settings.questionGenerationDefaults.file.numQuestions))
                 .onChange(async (value) => {
-                    this.plugin.settings.questionGenerationDefaults.file.numQuestions = Number(value);
-                    await this.plugin.saveSettings();
+					if (value == '') {
+						this.plugin.settings.questionGenerationDefaults.file.numQuestions = 0;
+						await this.plugin.saveSettings();
+					}
+					else if (!isNumeric(value)) {
+						new Notice('The value you entered is not a number value');
+					}
+					else {
+						this.plugin.settings.questionGenerationDefaults.file.numQuestions = Number(value);
+						await this.plugin.saveSettings();
+					}
                 })
             );
 
@@ -180,8 +191,17 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 			.addText(textComponent => textComponent
 				.setValue(String(this.plugin.settings.questionGenerationDefaults.file.numAlternatives))
 				.onChange(async (value) => {
-					this.plugin.settings.questionGenerationDefaults.file.numAlternatives = Number(value);
-					await this.plugin.saveSettings();
+					if (value == '') {
+						this.plugin.settings.questionGenerationDefaults.file.numAlternatives = 0;
+						await this.plugin.saveSettings();
+					}
+					else if (!isNumeric(value)) {
+						new Notice('The value you entered is not a number value');
+					}
+					else {
+						this.plugin.settings.questionGenerationDefaults.file.numAlternatives = Number(value);
+						await this.plugin.saveSettings();
+					}
 				})
 			);
 
@@ -193,8 +213,17 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             .addText(textComponent => textComponent
                 .setValue(String(this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions))
                 .onChange(async (value) => {
-                    this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions = Number(value);
-                    await this.plugin.saveSettings();
+					if (value == '') {
+						this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions = 0;
+						await this.plugin.saveSettings();
+					}
+					else if (!isNumeric(value)) {
+						new Notice('The value you entered is not a number value');
+					}
+					else {
+						this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions = Number(value);
+						await this.plugin.saveSettings();
+					}
                 })
             );
 
@@ -204,8 +233,17 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 			.addText(textComponent => textComponent
 				.setValue(String(this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives))
 				.onChange(async (value) => {
-					this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives = Number(value);
-					await this.plugin.saveSettings();
+					if (value == '') {
+						this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives = 0;
+						await this.plugin.saveSettings();
+					}
+					else if (!isNumeric(value)) {
+						new Notice('The value you entered is not a number value');
+					}
+					else {
+						this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives = Number(value);
+						await this.plugin.saveSettings();
+					}
 				})
 			);
 
@@ -290,8 +328,17 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             .addText(textComponent => textComponent
                 .setValue(String(this.plugin.settings.gptAdvancedOptions.max_tokens_per_question))
                 .onChange(async (value) => {
-                    this.plugin.settings.gptAdvancedOptions.max_tokens_per_question = Number(value);
-                    await this.plugin.saveSettings();
+					if (value == '') {
+						this.plugin.settings.gptAdvancedOptions.max_tokens_per_question = DEFAULT_SETTINGS.gptAdvancedOptions.max_tokens_per_question;
+						await this.plugin.saveSettings();
+					}
+					else if (!isNumeric(value)) {
+						new Notice('The value you entered is not a number value');
+					}
+					else {
+						this.plugin.settings.gptAdvancedOptions.max_tokens_per_question = Number(value);
+						await this.plugin.saveSettings();
+					}
                 })
             );
 	}
