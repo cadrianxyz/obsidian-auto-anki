@@ -1,6 +1,4 @@
-import { SafeStorage } from 'electron';
-const electron = window.require("electron").remote;
-const safeStorage = electron.safeStorage as SafeStorage
+import { safeStorage } from 'electron';
 
 export function electronEncrypt(text: string) {
     if (safeStorage.isEncryptionAvailable()) {
