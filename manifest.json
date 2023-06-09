@@ -1,7 +1,7 @@
 {
 	"id": "auto-anki",
 	"name": "Auto Anki",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"minAppVersion": "0.15.0",
 	"description": "Using GPT to automate card creation for Spaced Repetiton in Anki",
 	"author": "ad2969",
