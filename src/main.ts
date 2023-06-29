@@ -14,10 +14,10 @@ import {
 } from './settings';
 
 import { ExportModal } from './modal';
-import {
-    electronEncrypt,
-    electronDecrypt,
-} from './utils/enc';
+// import {
+//     electronEncrypt,
+//     electronDecrypt,
+// } from './utils/enc';
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
 import { isNumeric } from './utils/utils';
 
@@ -38,7 +38,8 @@ export default class AutoAnkiPlugin extends Plugin {
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				if (this.settings.openAiApiKey != null && view.data.length > 0) {
 					if (!checking) {
-                        const apiKey = electronDecrypt(this.settings.openAiApiKey);
+                        // const apiKey = electronDecrypt(this.settings.openAiApiKey);
+                        const apiKey = this.settings.openAiApiKey;
                         const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 						new ExportModal(
 							this.app,
@@ -64,7 +65,8 @@ export default class AutoAnkiPlugin extends Plugin {
 				const currTextSelection = editor.getSelection();
 				if (this.settings.openAiApiKey != null && currTextSelection.length > 0) {
 					if (!checking) {
-                        const apiKey = electronDecrypt(this.settings.openAiApiKey);
+                        // const apiKey = electronDecrypt(this.settings.openAiApiKey);
+                        const apiKey = this.settings.openAiApiKey;
                         const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 						new ExportModal(
 							this.app,
@@ -151,7 +153,8 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 			.addText(textComponent => textComponent
 				.setPlaceholder(`key entered: ${this.plugin.settings.openAiApiKeyIdentifier}` ?? 'NO_KEY_ENTERED')
 				.onChange(async (value) => {
-					this.plugin.settings.openAiApiKey = electronEncrypt(value);
+					// this.plugin.settings.openAiApiKey = electronEncrypt(value);
+					this.plugin.settings.openAiApiKey = value;
                     let identifier = 'xxxx';
                     if (value.length >= 7) {
                         identifier = `${value.slice(0,3)}...${value.slice(-4)}`

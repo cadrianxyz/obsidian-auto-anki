@@ -22,7 +22,7 @@ export interface QuestionGenerationDefaults {
 export interface PluginSettings {
 	ankiConnectPort: number;
 	ankiDestinationDeck: string;
-	openAiApiKey: Buffer | null;
+	openAiApiKey: string | null;
 	openAiApiKeyIdentifier: string;
 	gptAdvancedOptions: GptAdvancedOptions;
 	questionGenerationDefaults: QuestionGenerationDefaults;
