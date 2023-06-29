@@ -1,6 +1,11 @@
 import { safeStorage } from 'electron';
 
 export function electronEncrypt(text: string) {
+    if (safeStorage == undefined || safeStorage == null) {
+        console.error('Could not encrypt string: safeStorage not available!')
+        return text;
+    }
+
     if (safeStorage.isEncryptionAvailable()) {
         return safeStorage.encryptString(text);
     }
@@ -11,6 +16,10 @@ export function electronEncrypt(text: string) {
 }
 
 export function electronDecrypt(buf: Buffer) {
+    if (safeStorage == undefined || safeStorage == null) {
+        console.error('Could not decrypt string: safeStorage not available!')
+        return buf;
+    }
 
     if (safeStorage.isEncryptionAvailable()) {
         return safeStorage.decryptString(Buffer.from(buf));
