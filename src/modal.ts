@@ -3,7 +3,6 @@ import { exportToAnki } from './utils/anki';
 import { CardInformation, checkGpt, convertNotesToFlashcards } from './utils/gpt';
 import { GptAdvancedOptions } from './settings';
 
-// TODO: REMOVE
 // import { SAMPLE_CARD_INFORMATION } from 'sample/sample_card_information';
 
 function checkValidNumGreaterThanZero(text: string|number, inclusiveZero?: boolean) {
@@ -94,6 +93,7 @@ export class ExportModal extends Modal {
                         this.gptAdvancedOptions,
                     );
                     if (card_sets.length === 0) return;
+                    // TODO: add loading indicator somewhere
                     new ChoiceModal(
                         this.app,
                         card_sets,
