@@ -32,29 +32,69 @@ export default class AutoAnkiPlugin extends Plugin {
         const defaults = this.settings.questionGenerationDefaults;
         const { textSelection: defaultsTextSelection, file: defaultsFile } = defaults;
 
+		// TODO: add editor menu
+		// this.registerEvent(
+		// 	this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
+		// 		// const apiKey = electronDecrypt(this.settings.openAiApiKey);
+		// 		const apiKey = this.settings.openAiApiKey;
+		// 		const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
+			
+		// 		menu.addItem((item) => {
+		// 			item
+		// 				.setTitle("Export Current File to Anki")
+		// 				.setIcon("arrow-right-from-line")
+		// 				// .setDisabled(this.settings.openAiApiKey == null || view == null || view.data == null || view.data.length == 0)
+		// 				.onClick(async () => {
+		// 					new ExportModal(
+		// 						this.app,
+		// 						view.data,
+		// 						apiKey,
+		// 						port,
+		// 						this.settings.ankiDestinationDeck,
+		// 						this.settings.gptAdvancedOptions,
+		// 						defaultsFile.numQuestions,
+		// 						defaultsFile.numAlternatives,
+		// 					).open();
+		// 				});
+		// 		});
+		// 	})
+		// );
+
 		this.addCommand({
 			id: 'export-current-file-to-anki',
 			name: 'Export Current File to Anki',
-			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
-				if (this.settings.openAiApiKey != null && view.data.length > 0) {
-					if (!checking) {
-                        // const apiKey = electronDecrypt(this.settings.openAiApiKey);
-                        const apiKey = this.settings.openAiApiKey;
-                        const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
-						new ExportModal(
-							this.app,
-							view.data,
-							apiKey,
-							port,
-							this.settings.ankiDestinationDeck,
-                            this.settings.gptAdvancedOptions,
-							defaultsFile.numQuestions,
-                            defaultsFile.numAlternatives,
-						).open();
-					}
-					return true
+			checkCallback: (checking: boolean) => {
+				if (this.settings.openAiApiKey == null) {
+					return false;
 				}
-				return false;
+
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (view == null) {
+					return false;
+				}
+
+				if (!checking) {
+					if (view.data.length <= 0) {
+						new Notice('There is nothing in the file!');
+						return;
+					}
+
+					// const apiKey = electronDecrypt(this.settings.openAiApiKey);
+					const apiKey = this.settings.openAiApiKey;
+					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
+					new ExportModal(
+						this.app,
+						view.data,
+						apiKey,
+						port,
+						this.settings.ankiDestinationDeck,
+						this.settings.gptAdvancedOptions,
+						defaultsFile.numQuestions,
+						defaultsFile.numAlternatives,
+					).open();
+				}
+
+				return true;
 			},
 		});
 
@@ -63,25 +103,33 @@ export default class AutoAnkiPlugin extends Plugin {
 			name: 'Export Highlighted Text to Anki',
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				const currTextSelection = editor.getSelection();
-				if (this.settings.openAiApiKey != null && currTextSelection.length > 0) {
-					if (!checking) {
-                        // const apiKey = electronDecrypt(this.settings.openAiApiKey);
-                        const apiKey = this.settings.openAiApiKey;
-                        const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
-						new ExportModal(
-							this.app,
-							currTextSelection,
-							apiKey,
-							port,
-							this.settings.ankiDestinationDeck,
-                            this.settings.gptAdvancedOptions,
-							defaultsTextSelection.numQuestions,
-                            defaultsTextSelection.numAlternatives,
-						).open();
-					}
-					return true;
+
+				if (this.settings.openAiApiKey == null) {
+					return false;
 				}
-				return false;
+
+				if (!checking) {
+					if (currTextSelection.length == 0) {
+						new Notice('No text was selected!');
+						return;
+					}
+
+					// const apiKey = electronDecrypt(this.settings.openAiApiKey);
+					const apiKey = this.settings.openAiApiKey;
+					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
+					new ExportModal(
+						this.app,
+						currTextSelection,
+						apiKey,
+						port,
+						this.settings.ankiDestinationDeck,
+						this.settings.gptAdvancedOptions,
+						defaultsTextSelection.numQuestions,
+						defaultsTextSelection.numAlternatives,
+					).open();
+				}
+
+				return true;
 			},
 		});
 	}
@@ -114,7 +162,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 
 		const ankiDescription = document.createElement('div');
         // use innerHTML for harcoded description
-		ankiDescription.innerHTML = '<p><a href="https://apps.ankiweb.net/">Anki</a> is an open-source flashcard program that is popular for spaced repetition. This plugin has only been tested on desktop, and requires <a href="https://foosoft.net/projects/anki-connect/">Anki Connect</a> to be installed alongside the main Anki program.</p><p>Enabling this plugin will add commands to automatically generate Question-Answer-style flashcards into the Anki system using OpenAI\'s AI models.</p>';
+		ankiDescription.innerHTML = '<p><a href="https://apps.ankiweb.net/">Anki</a> is an open-source flashcard program that is popular for spaced repetition. This plugin has only been tested on desktop, and requires <a href="https://foosoft.net/projects/anki-connect/">Anki Connect</a> to be installed alongside the main Anki program.</p><p>Enabling this plugin will add commands to automatically generate Question-Answer-style flashcards into the Anki system using OpenAI\'s AI models.</p><p>For information on usage, see <a href="https://github.com/ad2969/obsidian-auto-anki#readme">the instructions</a> online.</p>';
         containerEl.appendChild(ankiDescription)
 		
 		new Setting(containerEl)
