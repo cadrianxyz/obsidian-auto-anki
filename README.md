@@ -4,10 +4,9 @@ Plugin for [Obsidian.md](https://obsidian.md/) that uses OpenAI's GPT LLM to aut
 
 > The plugin **only works for desktop** (tested on a Mac M1).
 
-The plugin introduces two new commands into obsidian:
+The plugin introduces two new "commands" into obsidian:
 - _Export Current File to Anki_
-- _Export Highlighted Text to Anki_
-These commands will **not** be avaialable if you do not have an active `Editable` window open (i.e. you need to have a document open, and it needs to be in `edit` mode).
+- _Export Highlighted Text to Anki_ (only available in an active `Editable` window open - i.e. you need to have a document open, and it needs to be in `edit` mode)
 
 The command palette can be accessed on Obsidian through the following hotkey (default): `CMD` + `P`
 
