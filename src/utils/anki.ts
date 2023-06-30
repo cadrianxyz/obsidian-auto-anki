@@ -6,41 +6,7 @@ const ANKI_VERSION = 6;
 // const ANKI_DEFAULT_DECK = 'Default';
 export const ANKI_CONNECT_DEFAULT_PORT = 8765;
 
-async function getAnkiDeck(ankiPort: number, deck: string) {
-    let res;
-    try {
-        res = await requestUrl({
-            method: 'POST',
-            url: `http://127.0.0.1:${ankiPort}`,
-            body: JSON.stringify({
-                action: 'deckNames',
-                version: ANKI_VERSION,
-                params: {},
-            }),
-            throw: true,
-        });
-    }
-    catch (err) {
-        new Notice(`ERR: Could not connect to Anki! Please ensure you have Anki Connect running on port ${ankiPort}.`);
-        return '';
-    }
-
-    const decks = res.json.result as Array<string>;
-    // use default deck if not specified
-    if (deck === '' && decks.length > 0) {
-        new Notice(`Anki deck name not specified in settings. Using existing deck: '${decks[0]}'`);
-        return decks[0];
-    }
-
-    const hasDeck = decks.some(d => deck.toLowerCase() === d.toLowerCase());
-    if (hasDeck) return deck;
-    else {
-        new Notice("ERR: Specified anki deck not found! Please go to your 'Simple Recall' settings to set an appropriate existing deck.");
-        return '';
-    }
-}
-
-async function addCardsToAnki(ankiPort: number, deck: string, data: Array<CardInformation>) {
+async function addCardsToAnki(ankiPort: number, deck: string, data: CardInformation[]) {
     // for anki connect, the request format is (https://foosoft.net/projects/anki-connect/)
     const ankiRequestData = data.map((card) => ({
         'deckName': deck,
@@ -69,18 +35,45 @@ async function addCardsToAnki(ankiPort: number, deck: string, data: Array<CardIn
         return res.json.result ?? [];
     }
     catch (err) {
-        new Notice(`ERR: Could not add cards to Anki!\n${err}`);
+        new Notice(`ERR: Could not connect to Anki! Please ensure you have Anki Connect running on port ${ankiPort}.`);
         return [];
     }
 }
 
-export async function exportToAnki(cards: Array<CardInformation>, port: number, deck: string) {
-    // check anki connection and deck
-    const d = await getAnkiDeck(port, deck);
-    if (d === '') return false;
+export async function getAnkiDecks(ankiPort: number) {
+    let res;
+    try {
+        res = await requestUrl({
+            method: 'POST',
+            url: `http://127.0.0.1:${ankiPort}`,
+            body: JSON.stringify({
+                action: 'deckNames',
+                version: ANKI_VERSION,
+                params: {},
+            }),
+            throw: true,
+        });
+    }
+    catch (err) {
+        new Notice(`ERR: Could not connect to Anki! Please ensure you have Anki Connect running on port ${ankiPort}.`);
+        return [];
+    }
+    return res.json.result as string[];
+}
 
+export async function checkAnkiDecksExist(ankiPort: number) {
+    const decks = await getAnkiDecks(ankiPort);
+    if (decks.length == 0) {
+        new Notice('Your anki account has no decks. Create a new one before using!')
+        return false;
+    }
+
+    return true;
+}
+
+export async function exportToAnki(cards: CardInformation[], port: number, deck: string) {
     // turn note into Q&A format using GPT
-    const ankiRes: Array<number> = await addCardsToAnki(port, d, cards);
-    if (ankiRes.length > 0) new Notice(`Successfully exported ${ankiRes.length} cards to Anki!`)
+    const ankiRes: number[] = await addCardsToAnki(port, deck, cards);
+    if (ankiRes.length > 0) new Notice(`Successfully exported ${ankiRes.length} card(s) to Anki!`)
     return true;
 }

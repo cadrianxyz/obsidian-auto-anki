@@ -6,6 +6,7 @@ import {
 	PluginSettingTab,
 	Setting,
 	Notice,
+	setIcon,
 } from 'obsidian';
 
 import {
@@ -19,11 +20,13 @@ import { ExportModal } from './modal';
 //     electronDecrypt,
 // } from './utils/enc';
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
-import { isNumeric } from './utils/utils';
+import { isNumeric } from './utils/validations';
+import { StatusBarElement } from './utils/cusom-types';
 
 export default class AutoAnkiPlugin extends Plugin {
 	settings: PluginSettings;
-	leafId: string;
+	statusBar: StatusBarElement;
+	statusBarIcon: HTMLElement;
 	
 	async onload() {
 		await this.loadSettings();
@@ -32,29 +35,64 @@ export default class AutoAnkiPlugin extends Plugin {
         const defaults = this.settings.questionGenerationDefaults;
         const { textSelection: defaultsTextSelection, file: defaultsFile } = defaults;
 
+		this.statusBar = this.addStatusBarItem();
+		this.statusBar.className = 'status-bar-auto-anki'
+		this.statusBarIcon = this.statusBar.createEl('span', { cls: 'status-bar-icon' });
+		this.statusBar.createEl('div', { text: 'auto-anki' });
+		this.statusBar.doReset = () => {
+			setIcon(this.statusBarIcon, 'check-circle-2');
+			this.statusBar.classList.remove('--running');
+			this.statusBar.classList.remove('--error');
+		};
+		this.statusBar.doDisplayError = () => {
+			setIcon(this.statusBarIcon, 'alert-circle');
+			this.statusBar.classList.remove('--running');
+			this.statusBar.classList.add('--error');
+			
+		}
+		this.statusBar.doDisplayRunning = () => {
+			setIcon(this.statusBarIcon, 'refresh-cw');
+			this.statusBar.classList.remove('--error');
+			this.statusBar.classList.add('--running');
+		};
+		this.statusBar.doReset();
+
 		this.addCommand({
 			id: 'export-current-file-to-anki',
 			name: 'Export Current File to Anki',
-			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
-				if (this.settings.openAiApiKey != null && view.data.length > 0) {
-					if (!checking) {
-                        // const apiKey = electronDecrypt(this.settings.openAiApiKey);
-                        const apiKey = this.settings.openAiApiKey;
-                        const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
-						new ExportModal(
-							this.app,
-							view.data,
-							apiKey,
-							port,
-							this.settings.ankiDestinationDeck,
-                            this.settings.gptAdvancedOptions,
-							defaultsFile.numQuestions,
-                            defaultsFile.numAlternatives,
-						).open();
-					}
-					return true
+			checkCallback: (checking: boolean) => {
+				if (this.settings.openAiApiKey == null) {
+					return false;
 				}
-				return false;
+
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (view == null) {
+					return false;
+				}
+
+				if (!checking) {
+					if (view.data.length <= 0) {
+						new Notice('There is nothing in the file!');
+						return;
+					}
+
+					// const apiKey = electronDecrypt(this.settings.openAiApiKey);
+					const apiKey = this.settings.openAiApiKey;
+					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
+					new ExportModal(
+						this.app,
+						this.statusBar,
+						view.data,
+						apiKey,
+						port,
+						this.settings.ankiDestinationDeck,
+						this.settings.gptAdvancedOptions,
+						defaultsFile.numQuestions,
+						defaultsFile.numAlternatives,
+					).open();
+				}
+
+				return true;
 			},
 		});
 
@@ -63,25 +101,34 @@ export default class AutoAnkiPlugin extends Plugin {
 			name: 'Export Highlighted Text to Anki',
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				const currTextSelection = editor.getSelection();
-				if (this.settings.openAiApiKey != null && currTextSelection.length > 0) {
-					if (!checking) {
-                        // const apiKey = electronDecrypt(this.settings.openAiApiKey);
-                        const apiKey = this.settings.openAiApiKey;
-                        const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
-						new ExportModal(
-							this.app,
-							currTextSelection,
-							apiKey,
-							port,
-							this.settings.ankiDestinationDeck,
-                            this.settings.gptAdvancedOptions,
-							defaultsTextSelection.numQuestions,
-                            defaultsTextSelection.numAlternatives,
-						).open();
-					}
-					return true;
+
+				if (this.settings.openAiApiKey == null) {
+					return false;
 				}
-				return false;
+
+				if (!checking) {
+					if (currTextSelection.length == 0) {
+						new Notice('No text was selected!');
+						return;
+					}
+
+					// const apiKey = electronDecrypt(this.settings.openAiApiKey);
+					const apiKey = this.settings.openAiApiKey;
+					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
+					new ExportModal(
+						this.app,
+						this.statusBar,
+						currTextSelection,
+						apiKey,
+						port,
+						this.settings.ankiDestinationDeck,
+						this.settings.gptAdvancedOptions,
+						defaultsTextSelection.numQuestions,
+						defaultsTextSelection.numAlternatives,
+					).open();
+				}
+
+				return true;
 			},
 		});
 	}
@@ -114,7 +161,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 
 		const ankiDescription = document.createElement('div');
         // use innerHTML for harcoded description
-		ankiDescription.innerHTML = '<p><a href="https://apps.ankiweb.net/">Anki</a> is an open-source flashcard program that is popular for spaced repetition. This plugin has only been tested on desktop, and requires <a href="https://foosoft.net/projects/anki-connect/">Anki Connect</a> to be installed alongside the main Anki program.</p><p>Enabling this plugin will add commands to automatically generate Question-Answer-style flashcards into the Anki system using OpenAI\'s AI models.</p>';
+		ankiDescription.innerHTML = '<p><a href="https://apps.ankiweb.net/">Anki</a> is an open-source flashcard program that is popular for spaced repetition. This plugin has only been tested on desktop, and requires <a href="https://foosoft.net/projects/anki-connect/">Anki Connect</a> to be installed alongside the main Anki program.</p><p>Enabling this plugin will add commands to automatically generate Question-Answer-style flashcards into the Anki system using OpenAI\'s AI models.</p><p>For information on usage, see <a href="https://github.com/ad2969/obsidian-auto-anki#readme">the instructions</a> online.</p>';
         containerEl.appendChild(ankiDescription)
 		
 		new Setting(containerEl)
@@ -254,8 +301,10 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 
         // See OpenAI docs for more info:
         // https://platform.openai.com/docs/api-reference/completions
-        const tempValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.temperature) });
-        tempValComponent.className = 'slider-val'; // used to make custom slider component with displayed value next to it
+        const tempValComponent = createEl('span', {
+			text: String(this.plugin.settings.gptAdvancedOptions.temperature),
+			cls: 'slider-val', // used to make custom slider component with displayed value next to it
+		});
         const tempComponent = new Setting(containerEl)
             .setName('Temperature')
             .setDesc('The sampling temperature used. Higher values increases randomness, while lower values makes the output more deterministic. (Default = 1)')
@@ -270,8 +319,10 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             );
         tempComponent.settingEl.appendChild(tempValComponent);
 
-        const topPValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.top_p) });
-        topPValComponent.className = 'slider-val';
+        const topPValComponent = createEl('span', {
+			text: String(this.plugin.settings.gptAdvancedOptions.top_p),
+			cls: 'slider-val',
+		});
         const topPComponent = new Setting(containerEl)
             .setName('Top P')
             .setDesc('Value for nucleus sampling. Lower values mean the output considers the tokens comprising higher probability mass. (Default = 1)')
@@ -286,8 +337,10 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             );
         topPComponent.settingEl.appendChild(topPValComponent);
 
-        const fPenaltyValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.frequency_penalty) });
-        fPenaltyValComponent.className = 'slider-val';
+        const fPenaltyValComponent = createEl('span', {
+			text: String(this.plugin.settings.gptAdvancedOptions.frequency_penalty),
+			cls: 'slider-val',
+		});
         const fPenaltyComponent = new Setting(containerEl)
             .setName('Frequency Penalty')
             .setDesc('Positive values penalize new tokens based on their existing frequency in the text so far. Higher values decrease chance of \'repetition\'. (Default = 0)')
@@ -302,8 +355,10 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             );
         fPenaltyComponent.settingEl.appendChild(fPenaltyValComponent);
 
-        const pPenaltyValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.presence_penalty) });
-        pPenaltyValComponent.className = 'slider-val';
+        const pPenaltyValComponent = createEl('span', {
+			text: String(this.plugin.settings.gptAdvancedOptions.presence_penalty),
+			cls: 'slider-val',
+		});
 		const pPenaltyComponent = new Setting(containerEl)
             .setName('Presence Penalty')
             .setDesc('Positive values penalize new tokens based on whether they appear in the text so far. Higher values increase chance of \'creativity\'. (Default = 0)')
