@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-auto-anki",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"description": "This is a plugin for Obsidian (https://obsidian.md). The plugin allows use of GPT to automate card creation for Spaced Repetiton in Anki",
 	"main": "main.js",
 	"scripts": {
