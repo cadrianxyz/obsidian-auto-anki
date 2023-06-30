@@ -42,10 +42,6 @@ export class ExportModal extends Modal {
         this.n_q_valid = checkValidNumGreaterThanZero(this.n_q);
         this.n_alt = defaultNumAlternatives ?? 3;
         this.n_alt_valid = checkValidNumGreaterThanZero(this.n_alt, true);
-        console.log(`this.n_q: ${this.n_q}`)
-        console.log(`this.n_q_valid: ${this.n_q_valid}`)
-        console.log(`this.n_alt: ${this.n_alt}`)
-        console.log(`this.n_alt_valid: ${this.n_alt_valid}`)
     }
 
     onOpen() {
@@ -138,6 +134,16 @@ class QuestionSetWithSelections {
     renderHtmlList() {
         const htmlList = createEl('ul');
         htmlList.className = 'question-options-container'
+
+        const convenienceButtons = createEl('div');
+        convenienceButtons.className = 'question-options__buttons'
+        const selectAllButton = convenienceButtons.createEl('button', { text: 'Select All' });
+        selectAllButton.onclick = (e: MouseEvent) => { this.selectAll() };
+        const deselectAllButton = convenienceButtons.createEl('button', { text: 'Deselect All' });
+        deselectAllButton.onclick = (e: MouseEvent) => { this.deselectAll() };
+
+        htmlList.appendChild(convenienceButtons);
+
         this.questions.forEach((q: CardInformation, idx: number) => {
             const htmlQuestion = createEl('li');
             htmlQuestion.appendChild(createEl('h3', { text: q.question }));
@@ -151,6 +157,7 @@ class QuestionSetWithSelections {
             htmlQuestion.onclick = () => { this.toggleSelect(idx) };
             htmlList.appendChild(htmlQuestion);
         })
+
         return htmlList;
     }
 
@@ -161,6 +168,19 @@ class QuestionSetWithSelections {
         else {
             this.selected.add(idx);
         }
+        this.renderFunc();
+    }
+
+    selectAll() {
+        this.questions.forEach((q: CardInformation, idx: number) => {
+            if (this.selected.has(idx)) return;
+            this.selected.add(idx);
+        });
+        this.renderFunc();
+    }
+
+    deselectAll() {
+        this.selected.clear();
         this.renderFunc();
     }
 
@@ -213,7 +233,7 @@ export class ChoiceModal extends Modal {
         else {
             this.n_sets = 1;
             this.question_sets.push(
-                new QuestionSetWithSelections(card_sets[0], this.renderContent, true)
+                new QuestionSetWithSelections(card_sets[0], this.renderContent)
             );
         }
     }

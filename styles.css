@@ -37,6 +37,10 @@ If your plugin does not need CSS, delete this file.
     margin: 0;
 }
 
+.question-options__buttons > button {
+    margin-right: 1em;
+}
+
 .question-option {
     padding: 0.5rem 1rem;
     margin: 1rem 0rem;
