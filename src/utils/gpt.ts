@@ -68,14 +68,14 @@ export async function convertNotesToFlashcards(
     }
 
     try {
-        const card_choices: Array<Array<CardInformation>> = [];
+        const card_choices: Array<CardInformation[]> = [];
         
         response.data.choices.forEach((set) => {
             const data = set.text ?? '';
-            const choices: Array<string> = data.trim().split('\n\n');
-            const cards: Array<CardInformation> = [];
+            const choices: string[] = data.trim().split('\n\n');
+            const cards: CardInformation[] = [];
             choices.forEach((choice: string) => {
-                const splits: Array<string> = choice.split('\n');
+                const splits: string[] = choice.split('\n');
                 if (splits.length < 2) return;
                 cards.push({
                     question: splits[0].slice(3),

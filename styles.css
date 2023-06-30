@@ -14,6 +14,14 @@ If your plugin does not need CSS, delete this file.
     opacity: 0.5;
 }
 
+.error-notice {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
 .modal-buttons {
     display:flex;
     flex-direction: row;
@@ -31,17 +39,20 @@ If your plugin does not need CSS, delete this file.
     text-align: end;
 }
 
-.question-options-container {
+.question-options-container,
+.deck-options-container {
     list-style-type: none;
     padding: 0;
     margin: 0;
 }
 
-.question-options__buttons > button {
+.question-options__buttons > button,
+.deck-options__buttons > button {
     margin-right: 1em;
 }
 
-.question-option {
+.question-option,
+.deck-option {
     padding: 0.5rem 1rem;
     margin: 1rem 0rem;
     background: var(--background-secondary);
@@ -50,7 +61,8 @@ If your plugin does not need CSS, delete this file.
     border-radius: 1rem;
 }
 
-.question-option.--selected {
+.question-option.--selected,
+.deck-option.--selected {
     background: var(--color-accent);
     color: var(--text-on-accent);
 }

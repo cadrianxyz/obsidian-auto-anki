@@ -1,5 +1,5 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
-import { exportToAnki } from './utils/anki';
+import { exportToAnki, checkAnkiDecksExist, getAnkiDecks } from './utils/anki';
 import { CardInformation, checkGpt, convertNotesToFlashcards } from './utils/gpt';
 import { GptAdvancedOptions } from './settings';
 
@@ -44,8 +44,11 @@ export class ExportModal extends Modal {
         this.n_alt_valid = checkValidNumGreaterThanZero(this.n_alt, true);
     }
 
-    onOpen() {
+    async onOpen() {
         const { contentEl } = this;
+
+        const isAnkiAvailable = await checkAnkiDecksExist(this.port);
+        const modalDisabled = !isAnkiAvailable;
 
         contentEl.createEl('h1', { text: 'How many questions should be generated?' });
 
@@ -73,8 +76,9 @@ export class ExportModal extends Modal {
         new Setting(contentEl)
             .addButton((btn) =>
                 btn
-                .setButtonText('Export')
+                .setButtonText('Generate Cards')
                 .setCta()
+                .setDisabled(modalDisabled)
                 .onClick(async () => {
                     if (!this.n_q_valid || !this.n_alt_valid) {
                         new Notice('An invalid number was entered!');
@@ -86,7 +90,7 @@ export class ExportModal extends Modal {
                     isRequestValid = checkGpt(this.apiKey);
 
                     if (!isRequestValid) return;
-                    const card_sets: Array<Array<CardInformation>> = await convertNotesToFlashcards(
+                    const card_sets: Array<CardInformation[]> = await convertNotesToFlashcards(
                         this.apiKey,
                         this.data,
                         this.n_q,
@@ -106,6 +110,9 @@ export class ExportModal extends Modal {
                     ).open();
                 })
             );
+
+        const ankiCheck = await checkAnkiDecksExist(this.port);
+        if (!ankiCheck) this.close();
     }
 
     onClose() {
@@ -115,12 +122,12 @@ export class ExportModal extends Modal {
 }
 
 class QuestionSetWithSelections {
-    questions: Array<CardInformation>;
+    questions: CardInformation[];
     selected: Set<number>;
     renderFunc: VoidFunction;
     
     constructor(
-        questions: Array<CardInformation>,
+        questions: CardInformation[],
         onChangeCallback: VoidFunction,
         selectAllOnInit?: boolean,
     ) {
@@ -190,8 +197,8 @@ class QuestionSetWithSelections {
 }
 
 export class ChoiceModal extends Modal {
-    card_sets: Array<Array<CardInformation>>;
-    question_sets: Array<QuestionSetWithSelections>;
+    card_sets: Array<CardInformation[]>;
+    question_sets: QuestionSetWithSelections[];
     n_sets: number;
     port: number;
     deck: string;
@@ -200,7 +207,7 @@ export class ChoiceModal extends Modal {
     
     constructor(
         app: App,
-        card_sets: Array<Array<CardInformation>>,
+        card_sets: Array<CardInformation[]>,
         port: number,
         deck: string,
         n_q: number,
@@ -220,7 +227,7 @@ export class ChoiceModal extends Modal {
         if (has_alternatives) {
             this.n_sets = n_q;
             for (let i = 0; i < n_q; i++) {
-                const question_choices: Array<CardInformation> = [];
+                const question_choices: CardInformation[] = [];
     
                 card_sets.forEach((set) => {
                     if (i < set.length) question_choices.push(set[i]);
@@ -291,20 +298,21 @@ export class ChoiceModal extends Modal {
                 new Setting(htmlButtons)
                     .addButton((btn) =>
                         btn
-                        .setButtonText('Confirm')
+                        .setButtonText('Confirm Selection')
                         .setCta()
                         .onClick(async () => {
                             this.close();
-                            const allSelectedCards: Array<CardInformation> = [];
+                            const allSelectedCards: CardInformation[] = [];
                             this.question_sets.forEach((set) => {
                                 const selectedCards = set.extractSelectedQuesions()
                                 allSelectedCards.push(...selectedCards);
                             })
-                            exportToAnki(
-                                allSelectedCards,
+                            new AnkiDeckModal(
+                                this.app,
                                 this.port,
                                 this.deck,
-                            );
+                                allSelectedCards,
+                            ).open();
                         })
                 );
             }
@@ -313,26 +321,154 @@ export class ChoiceModal extends Modal {
             new Setting(contentEl)
                 .addButton((btn) =>
                     btn
-                    .setButtonText('Confirm')
+                    .setButtonText('Confirm Selection')
                     .setCta()
                     .onClick(async () => {
                         this.close();
-                        const allSelectedCards: Array<CardInformation> = [];
+                        const allSelectedCards: CardInformation[] = [];
                         this.question_sets.forEach((set) => {
                             const selectedCards = set.extractSelectedQuesions()
                             allSelectedCards.push(...selectedCards);
                         })
-                        exportToAnki(
-                            allSelectedCards,
+                        new AnkiDeckModal(
+                            this.app,
                             this.port,
                             this.deck,
-                        );
+                            allSelectedCards,
+                        ).open();
                     })
             );
         }
     }
 
     onOpen() {
+        this.renderContent();
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+export class AnkiDeckModal extends Modal {
+    port: number;
+    cardsToExport: CardInformation[];
+    decks: string[];
+    selectedDeck: string;
+    isDataFetched: boolean;
+    isDataError: boolean;
+
+    constructor(
+        app: App,
+        port: number,
+        defaultDeck: string,
+        allSelectedCards: CardInformation[],
+    ) {
+        super(app);
+        this.renderContent  = this.renderContent.bind(this);
+        this.port = port;
+        this.selectedDeck = defaultDeck;
+        this.cardsToExport = allSelectedCards;
+
+        this.isDataFetched = false;
+    }
+
+    async fetchData() {
+        const fetchedDecks = await getAnkiDecks(this.port);
+        this.decks = fetchedDecks;
+        this.isDataFetched = true;
+
+
+        if (this.selectedDeck === '' && fetchedDecks.length > 0) {
+            this.selectedDeck = fetchedDecks[0];
+        }
+    }
+
+    renderHtmlList() {
+        const htmlList = createEl('ul');
+        htmlList.className = 'deck-options-container'
+
+        const convenienceButtons = createEl('div');
+        convenienceButtons.className = 'deck-options__buttons'
+
+        htmlList.appendChild(convenienceButtons);
+
+        this.decks.forEach((d: string) => {
+            const htmlDeck = createEl('li');
+            htmlDeck.appendChild(createEl('h3', { text: d }));
+            if (this.selectedDeck === d) {
+                htmlDeck.className = 'deck-option --selected'
+            }
+            else {
+                htmlDeck.className = 'deck-option'
+            }
+            htmlDeck.onclick = () => {
+                this.selectedDeck = d;
+                this.renderContent();
+            };
+            htmlList.appendChild(htmlDeck);
+        })
+
+        return htmlList;
+    }
+
+    renderContent() {
+        const { contentEl } = this;
+        contentEl.innerHTML = ''; // use innerHTML to reset content
+
+        // modal title
+        contentEl.createEl('h1', { text: 'Anki Decks' });
+
+        if (!this.isDataFetched) {
+            const centerContainer = contentEl.createEl('div');
+            centerContainer.className = 'error-notice';
+            centerContainer.createEl('h4', { text: 'loading data...' });
+            return;
+        }
+        
+        if (this.decks.length === 0) {
+            const centerContainer = contentEl.createEl('div');
+            centerContainer.className = 'error-notice';
+            centerContainer.createEl('h4', { text: 'Either an error occured or no Anki decks were found' });
+            const refreshButton = centerContainer.createEl('button', { text: 'Refresh' });
+            refreshButton.onclick = async () => {
+                this.renderContent();
+                await this.fetchData();
+                this.renderContent();
+            }
+            return;
+        }
+
+        // modal description
+        contentEl.createEl('p', { text: 'Pick one of the following available Anki decks to export to.' });
+
+        // get deck list to render
+        const htmlList = this.renderHtmlList();
+        contentEl.appendChild(htmlList);
+
+        new Setting(contentEl)
+            .addButton((btn) =>
+                btn
+                .setButtonText('Confirm and Export')
+                .setDisabled(this.selectedDeck === '')
+                .setCta()
+                .onClick(async () => {
+                    if (this.selectedDeck === '') return;
+                
+                    this.close();
+                    exportToAnki(
+                        this.cardsToExport,
+                        this.port,
+                        this.selectedDeck,
+                    );
+                })
+        );
+    }
+
+    async onOpen() {
+        this.renderContent();
+        await this.fetchData();
         this.renderContent();
     }
 
