@@ -302,8 +302,10 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 
         // See OpenAI docs for more info:
         // https://platform.openai.com/docs/api-reference/completions
-        const tempValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.temperature) });
-        tempValComponent.className = 'slider-val'; // used to make custom slider component with displayed value next to it
+        const tempValComponent = createEl('span', {
+			text: String(this.plugin.settings.gptAdvancedOptions.temperature),
+			cls: 'slider-val', // used to make custom slider component with displayed value next to it
+		});
         const tempComponent = new Setting(containerEl)
             .setName('Temperature')
             .setDesc('The sampling temperature used. Higher values increases randomness, while lower values makes the output more deterministic. (Default = 1)')
@@ -318,8 +320,10 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             );
         tempComponent.settingEl.appendChild(tempValComponent);
 
-        const topPValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.top_p) });
-        topPValComponent.className = 'slider-val';
+        const topPValComponent = createEl('span', {
+			text: String(this.plugin.settings.gptAdvancedOptions.top_p),
+			cls: 'slider-val',
+		});
         const topPComponent = new Setting(containerEl)
             .setName('Top P')
             .setDesc('Value for nucleus sampling. Lower values mean the output considers the tokens comprising higher probability mass. (Default = 1)')
@@ -334,8 +338,10 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             );
         topPComponent.settingEl.appendChild(topPValComponent);
 
-        const fPenaltyValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.frequency_penalty) });
-        fPenaltyValComponent.className = 'slider-val';
+        const fPenaltyValComponent = createEl('span', {
+			text: String(this.plugin.settings.gptAdvancedOptions.frequency_penalty),
+			cls: 'slider-val',
+		});
         const fPenaltyComponent = new Setting(containerEl)
             .setName('Frequency Penalty')
             .setDesc('Positive values penalize new tokens based on their existing frequency in the text so far. Higher values decrease chance of \'repetition\'. (Default = 0)')
@@ -350,8 +356,10 @@ class AutoAnkiSettingTab extends PluginSettingTab {
             );
         fPenaltyComponent.settingEl.appendChild(fPenaltyValComponent);
 
-        const pPenaltyValComponent = createEl('span', { text: String(this.plugin.settings.gptAdvancedOptions.presence_penalty) });
-        pPenaltyValComponent.className = 'slider-val';
+        const pPenaltyValComponent = createEl('span', {
+			text: String(this.plugin.settings.gptAdvancedOptions.presence_penalty),
+			cls: 'slider-val',
+		});
 		const pPenaltyComponent = new Setting(containerEl)
             .setName('Presence Penalty')
             .setDesc('Positive values penalize new tokens based on whether they appear in the text so far. Higher values increase chance of \'creativity\'. (Default = 0)')

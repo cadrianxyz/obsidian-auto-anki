@@ -139,11 +139,9 @@ class QuestionSetWithSelections {
     }
 
     renderHtmlList() {
-        const htmlList = createEl('ul');
-        htmlList.className = 'question-options-container'
+        const htmlList = createEl('ul', { cls: 'question-options-container' });
 
-        const convenienceButtons = createEl('div');
-        convenienceButtons.className = 'question-options__buttons'
+        const convenienceButtons = createEl('div', { cls: 'question-options__buttons' });
         const selectAllButton = convenienceButtons.createEl('button', { text: 'Select All' });
         selectAllButton.onclick = (e: MouseEvent) => { this.selectAll() };
         const deselectAllButton = convenienceButtons.createEl('button', { text: 'Deselect All' });
@@ -265,8 +263,7 @@ export class ChoiceModal extends Modal {
         // create buttons depending on how many sets there are
         if (this.n_sets > 1) {
             // create buttons in modal footer
-            const htmlButtons = createEl('div');
-            htmlButtons.className = 'modal-buttons';
+            const htmlButtons = createEl('div', { cls: 'modal-buttons' });
             // previous button
             new Setting(htmlButtons)
                 .addButton((btn) =>
@@ -386,11 +383,8 @@ export class AnkiDeckModal extends Modal {
     }
 
     renderHtmlList() {
-        const htmlList = createEl('ul');
-        htmlList.className = 'deck-options-container'
-
-        const convenienceButtons = createEl('div');
-        convenienceButtons.className = 'deck-options__buttons'
+        const htmlList = createEl('ul', { cls: 'deck-options-container' });
+        const convenienceButtons = createEl('div', { cls: 'deck-options__buttons' });
 
         htmlList.appendChild(convenienceButtons);
 
@@ -421,15 +415,13 @@ export class AnkiDeckModal extends Modal {
         contentEl.createEl('h1', { text: 'Anki Decks' });
 
         if (!this.isDataFetched) {
-            const centerContainer = contentEl.createEl('div');
-            centerContainer.className = 'error-notice';
+            const centerContainer = contentEl.createEl('div', { cls: 'error-notice' });
             centerContainer.createEl('h4', { text: 'loading data...' });
             return;
         }
         
         if (this.decks.length === 0) {
-            const centerContainer = contentEl.createEl('div');
-            centerContainer.className = 'error-notice';
+            const centerContainer = contentEl.createEl('div', { cls: 'error-notice' });
             centerContainer.createEl('h4', { text: 'Either an error occured or no Anki decks were found' });
             const refreshButton = centerContainer.createEl('button', { text: 'Refresh' });
             refreshButton.onclick = async () => {
