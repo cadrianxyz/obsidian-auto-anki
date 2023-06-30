@@ -176,18 +176,6 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 				})
 			);
 		
-		new Setting(containerEl)
-			.setName('Anki Deck Name')
-			.setDesc('The name of the deck in Anki you want to export flashcards to')
-			.addText(textComponent => textComponent
-				.setPlaceholder('Default')
-				.setValue(String(this.plugin.settings.ankiDestinationDeck))
-				.onChange(async (value) => {
-					this.plugin.settings.ankiDestinationDeck = value;
-					await this.plugin.saveSettings();
-				})
-			);
-		
 		const openAiDescription = new DocumentFragment();
 		const openAiDescHtml = document.createElement('p');
         // use innerHTML for harcoded description
@@ -212,6 +200,18 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 			);
 
         containerEl.createEl('h2', { text: 'Default Options for Exporting' });
+		
+		new Setting(containerEl)
+			.setName('Anki Default Deck Name')
+			.setDesc('The name of the deck in Anki you want to export flashcards to, by default')
+			.addText(textComponent => textComponent
+				.setPlaceholder('Default')
+				.setValue(String(this.plugin.settings.ankiDestinationDeck))
+				.onChange(async (value) => {
+					this.plugin.settings.ankiDestinationDeck = value;
+					await this.plugin.saveSettings();
+				})
+			);
 
         containerEl.createEl('p', { text: '--> For exporting full files' });
         
