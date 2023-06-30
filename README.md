@@ -8,7 +8,7 @@ The plugin introduces two new "commands" into obsidian:
 - _Export Current File to Anki_
 - _Export Highlighted Text to Anki_ (only available in an active `Editable` window open - i.e. you need to have a document open, and it needs to be in `edit` mode)
 
-The command palette can be accessed on Obsidian through the following hotkey (default): `CMD` + `P`
+The command palette can be accessed on Obsidian through the following hotkey (default): `CMD` + `SHIFT` + `P`
 
 ![command-palette-hotkey](media/command-palette-hotkey.png).
 
