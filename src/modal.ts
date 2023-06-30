@@ -6,8 +6,9 @@ import { GptAdvancedOptions } from './settings';
 // import { SAMPLE_CARD_INFORMATION } from 'sample/sample_card_information';
 
 function checkValidNumGreaterThanZero(text: string|number, inclusiveZero?: boolean) {
-    if (inclusiveZero) return text != '' && !isNaN(+text) && +text >= 0;
-    return text != '' && !isNaN(+text) && +text > 0;
+    if (typeof text == 'string' && text === '') return false;
+    if (isNaN(+text)) return false;
+    return inclusiveZero ? +text >= 0 : +text > 0;
 }
 export class ExportModal extends Modal {
     n_q: number;
@@ -41,6 +42,10 @@ export class ExportModal extends Modal {
         this.n_q_valid = checkValidNumGreaterThanZero(this.n_q);
         this.n_alt = defaultNumAlternatives ?? 3;
         this.n_alt_valid = checkValidNumGreaterThanZero(this.n_alt, true);
+        console.log(`this.n_q: ${this.n_q}`)
+        console.log(`this.n_q_valid: ${this.n_q_valid}`)
+        console.log(`this.n_alt: ${this.n_alt}`)
+        console.log(`this.n_alt_valid: ${this.n_alt_valid}`)
     }
 
     onOpen() {
