@@ -1,7 +1,9 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
+import { GptAdvancedOptions } from './settings';
+
 import { exportToAnki, checkAnkiDecksExist, getAnkiDecks } from './utils/anki';
 import { CardInformation, checkGpt, convertNotesToFlashcards } from './utils/gpt';
-import { GptAdvancedOptions } from './settings';
+import { StatusBarElement } from './utils/cusom-types';
 
 // import { SAMPLE_CARD_INFORMATION } from 'sample/sample_card_information';
 
@@ -20,9 +22,11 @@ export class ExportModal extends Modal {
     port: number;
     deck: string;
     gptAdvancedOptions: GptAdvancedOptions;
+    statusBar: StatusBarElement;
     
     constructor(
         app: App,
+        statusBar: StatusBarElement,
         data: string,
         openAiApiKey: string,
         ankiConnectPort: number,
@@ -32,6 +36,7 @@ export class ExportModal extends Modal {
         defaultNumAlternatives?: number,
     ) {
         super(app);
+        this.statusBar = statusBar;
         this.data = data;
         this.apiKey = openAiApiKey;
         this.port = ankiConnectPort;
@@ -49,6 +54,9 @@ export class ExportModal extends Modal {
 
         const isAnkiAvailable = await checkAnkiDecksExist(this.port);
         const modalDisabled = !isAnkiAvailable;
+        // update status bar if error/success
+        if (this.statusBar.doDisplayError && !isAnkiAvailable) this.statusBar.doDisplayError();
+        if (this.statusBar.doReset && isAnkiAvailable) this.statusBar.doReset();
 
         contentEl.createEl('h1', { text: 'How many questions should be generated?' });
 
@@ -90,6 +98,7 @@ export class ExportModal extends Modal {
                     isRequestValid = checkGpt(this.apiKey);
 
                     if (!isRequestValid) return;
+                    if (this.statusBar.doDisplayRunning) this.statusBar.doDisplayRunning();
                     const card_sets: Array<CardInformation[]> = await convertNotesToFlashcards(
                         this.apiKey,
                         this.data,
@@ -97,6 +106,8 @@ export class ExportModal extends Modal {
                         this.n_alt+1,
                         this.gptAdvancedOptions,
                     );
+                    if (this.statusBar.doReset) this.statusBar.doReset();
+
                     if (card_sets.length === 0) return;
                     // TODO: add loading indicator somewhere
                     new ChoiceModal(

@@ -6,6 +6,7 @@ import {
 	PluginSettingTab,
 	Setting,
 	Notice,
+	setIcon,
 } from 'obsidian';
 
 import {
@@ -19,11 +20,13 @@ import { ExportModal } from './modal';
 //     electronDecrypt,
 // } from './utils/enc';
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
-import { isNumeric } from './utils/utils';
+import { isNumeric } from './utils/validations';
+import { StatusBarElement } from './utils/cusom-types';
 
 export default class AutoAnkiPlugin extends Plugin {
 	settings: PluginSettings;
-	leafId: string;
+	statusBar: StatusBarElement;
+	statusBarIcon: HTMLElement;
 	
 	async onload() {
 		await this.loadSettings();
@@ -32,33 +35,27 @@ export default class AutoAnkiPlugin extends Plugin {
         const defaults = this.settings.questionGenerationDefaults;
         const { textSelection: defaultsTextSelection, file: defaultsFile } = defaults;
 
-		// TODO: add editor menu
-		// this.registerEvent(
-		// 	this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
-		// 		// const apiKey = electronDecrypt(this.settings.openAiApiKey);
-		// 		const apiKey = this.settings.openAiApiKey;
-		// 		const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
+		this.statusBar = this.addStatusBarItem();
+		this.statusBar.className = 'status-bar-auto-anki'
+		this.statusBarIcon = this.statusBar.createEl('span', { cls: 'status-bar-icon' });
+		this.statusBar.createEl('div', { text: 'auto-anki' });
+		this.statusBar.doReset = () => {
+			setIcon(this.statusBarIcon, 'check-circle-2');
+			this.statusBar.classList.remove('--running');
+			this.statusBar.classList.remove('--error');
+		};
+		this.statusBar.doDisplayError = () => {
+			setIcon(this.statusBarIcon, 'alert-circle');
+			this.statusBar.classList.remove('--running');
+			this.statusBar.classList.add('--error');
 			
-		// 		menu.addItem((item) => {
-		// 			item
-		// 				.setTitle("Export Current File to Anki")
-		// 				.setIcon("arrow-right-from-line")
-		// 				// .setDisabled(this.settings.openAiApiKey == null || view == null || view.data == null || view.data.length == 0)
-		// 				.onClick(async () => {
-		// 					new ExportModal(
-		// 						this.app,
-		// 						view.data,
-		// 						apiKey,
-		// 						port,
-		// 						this.settings.ankiDestinationDeck,
-		// 						this.settings.gptAdvancedOptions,
-		// 						defaultsFile.numQuestions,
-		// 						defaultsFile.numAlternatives,
-		// 					).open();
-		// 				});
-		// 		});
-		// 	})
-		// );
+		}
+		this.statusBar.doDisplayRunning = () => {
+			setIcon(this.statusBarIcon, 'refresh-cw');
+			this.statusBar.classList.remove('--error');
+			this.statusBar.classList.add('--running');
+		};
+		this.statusBar.doReset();
 
 		this.addCommand({
 			id: 'export-current-file-to-anki',
@@ -84,6 +81,7 @@ export default class AutoAnkiPlugin extends Plugin {
 					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 					new ExportModal(
 						this.app,
+						this.statusBar,
 						view.data,
 						apiKey,
 						port,
@@ -119,6 +117,7 @@ export default class AutoAnkiPlugin extends Plugin {
 					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 					new ExportModal(
 						this.app,
+						this.statusBar,
 						currTextSelection,
 						apiKey,
 						port,

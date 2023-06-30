@@ -22,6 +22,56 @@ If your plugin does not need CSS, delete this file.
     text-align: center;
 }
 
+.status-bar-auto-anki {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.3em;
+    border: black 1px solid;
+}
+
+.status-bar-icon {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.status-bar-auto-anki > div {
+    margin-left: 0.3em;
+}
+
+.status-bar-auto-anki.--error > .status-bar-icon  {
+    color: red;
+}
+
+.status-bar-auto-anki.--running > .status-bar-icon {
+    -webkit-animation-name: spin;
+    -webkit-animation-duration: 1000ms;
+    -webkit-animation-iteration-count: infinite;
+    -webkit-animation-timing-function: linear;
+
+    animation-name: spin;
+    animation-duration: 1000ms;
+    animation-iteration-count: infinite;
+    animation-timing-function: linear;
+}
+@-webkit-keyframes spin { 
+    from { 
+        -webkit-transform: rotate(0deg); 
+    } to { 
+        -webkit-transform: rotate(360deg); 
+    }
+}
+@keyframes spin { 
+    from { 
+        transform: rotate(0deg); 
+    } to { 
+        transform: rotate(360deg); 
+    }
+}
+
 .modal-buttons {
     display:flex;
     flex-direction: row;
