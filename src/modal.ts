@@ -1,7 +1,12 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { GptAdvancedOptions } from './settings';
 
-import { exportToAnki, checkAnkiDecksExist, getAnkiDecks } from './utils/anki';
+import { 
+    checkAnkiAvailability,
+    checkAnkiDecksExist,
+    exportToAnki,
+    getAnkiDecks,
+} from './utils/anki';
 import { CardInformation, checkGpt, convertNotesToFlashcards } from './utils/gpt';
 import { StatusBarElement } from './utils/cusom-types';
 
@@ -52,11 +57,16 @@ export class ExportModal extends Modal {
     async onOpen() {
         const { contentEl } = this;
 
-        const isAnkiAvailable = await checkAnkiDecksExist(this.port);
-        const modalDisabled = !isAnkiAvailable;
+        const isAnkiAvailable = await checkAnkiAvailability(this.port);
         // update status bar if error/success
         if (this.statusBar.doDisplayError && !isAnkiAvailable) this.statusBar.doDisplayError();
         if (this.statusBar.doReset && isAnkiAvailable) this.statusBar.doReset();
+        if (!isAnkiAvailable) return this.close();
+
+        const ankiCheck = await checkAnkiDecksExist(this.port);
+        if (this.statusBar.doDisplayError && !ankiCheck) this.statusBar.doDisplayError();
+        if (this.statusBar.doReset && ankiCheck) this.statusBar.doReset();
+        if (!ankiCheck) return this.close();
 
         contentEl.createEl('h1', { text: 'How many questions should be generated?' });
 
@@ -86,7 +96,6 @@ export class ExportModal extends Modal {
                 btn
                 .setButtonText('Generate Cards')
                 .setCta()
-                .setDisabled(modalDisabled)
                 .onClick(async () => {
                     if (!this.n_q_valid || !this.n_alt_valid) {
                         new Notice('An invalid number was entered!');
@@ -121,9 +130,6 @@ export class ExportModal extends Modal {
                     ).open();
                 })
             );
-
-        const ankiCheck = await checkAnkiDecksExist(this.port);
-        if (!ankiCheck) this.close();
     }
 
     onClose() {
