@@ -1,6 +1,7 @@
+import { ChatCompletionCreateParamsBase } from 'openai/resources/chat/completions';
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
 
-export interface GptAdvancedOptions {
+export interface GptAdvancedOptions extends Partial<ChatCompletionCreateParamsBase> {
 	temperature: number;
 	top_p: number;
 	frequency_penalty: number;
