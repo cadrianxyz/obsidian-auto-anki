@@ -32,8 +32,8 @@ async function addCardsToAnki(ankiPort: number, deck: string, data: CardInformat
         'deckName': deck,
         'modelName': 'Basic',
         'fields': {
-            'Front': card.question,
-            'Back': card.answer,
+            'Front': card.q,
+            'Back': card.a,
         },
         'tags': [
             'auto-gpt-imported'
