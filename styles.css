@@ -106,7 +106,7 @@ If your plugin does not need CSS, delete this file.
     padding: 0.5rem 1rem;
     margin: 1rem 0rem;
     background: var(--background-secondary);
-    color: black;
+    color: var(--text-normal);
     border: 1px solid rgb(0, 0, 0, 0.1);
     border-radius: 1rem;
 }
