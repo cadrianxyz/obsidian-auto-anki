@@ -168,8 +168,8 @@ class QuestionSetWithSelections {
 
         this.questions.forEach((q: CardInformation, idx: number) => {
             const htmlQuestion = createEl('li');
-            htmlQuestion.appendChild(createEl('h3', { text: q.question }));
-            htmlQuestion.appendChild(createEl('p', { text: q.answer }));
+            htmlQuestion.appendChild(createEl('h3', { text: q.q }));
+            htmlQuestion.appendChild(createEl('p', { text: q.a }));
             if (this.selected.has(idx)) {
                 htmlQuestion.className = 'question-option --selected'
             }
