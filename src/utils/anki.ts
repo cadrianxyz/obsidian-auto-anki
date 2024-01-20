@@ -52,7 +52,7 @@ async function addCardsToAnki(ankiPort: number, deck: string, data: CardInformat
         }),
             throw: true,
         });
-        return res.json.result ?? [];
+        return (Array.isArray(res.json.result) && res.json.result.length === 1 && res.json.result[0] === null) ? [] : (res.json.result ?? []);
     }
     catch (err) {
         new Notice(`ERR: Could not connect to Anki! Please ensure you have Anki Connect running on port ${ankiPort}.`);
@@ -94,6 +94,9 @@ export async function checkAnkiDecksExist(ankiPort: number) {
 export async function exportToAnki(cards: CardInformation[], port: number, deck: string) {
     // turn note into Q&A format using GPT
     const ankiRes: number[] = await addCardsToAnki(port, deck, cards);
-    if (ankiRes.length > 0) new Notice(`Successfully exported ${ankiRes.length} card(s) to Anki!`)
+    if (ankiRes.length > 0) 
+        new Notice(`Successfully exported ${ankiRes.length} card(s) to Anki!`)
+    else
+        new Notice(`ERR: Anki Connect was found, but an error occurred during export!`)
     return true;
 }
