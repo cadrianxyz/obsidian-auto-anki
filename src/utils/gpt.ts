@@ -82,6 +82,7 @@ function createMessages(notes: string, num: number) {
         content: `You will be provided notes on a specific topic. The notes are formatted in markdown. Based on the given notes, make a list of ${num} questions and short answers that can be used for reviewing said notes by spaced repetition. Use the following guidelines:
         - output the questions and answers in the following JSON format { "questions_answers": [{ "q": "<generated question>", "a": "<generated answer>" }] }
         - ensure that the questions cover the entire portion of the given notes, do not come up with similar questions or repeat the same questions
+        - questions and answers should be in the same language as the given notes
     `} as ChatCompletionSystemMessageParam)
 
     // Insert sample user prompt
