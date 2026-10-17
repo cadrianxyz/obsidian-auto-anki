@@ -25,15 +25,21 @@ export interface PluginSettings {
 	ankiDestinationDeck: string;
 	openAiApiKey: string | null;
 	openAiApiKeyIdentifier: string;
+	openAiModel: string;
 	gptAdvancedOptions: GptAdvancedOptions;
 	questionGenerationDefaults: QuestionGenerationDefaults;
 }
+
+// 0.2.1 hard-coded 'gpt-3.5-turbo-1106', which OpenAI shut down on 2026-09-28.
+// The model is now a setting; this is only the value a new install starts with.
+export const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
 
 export const DEFAULT_SETTINGS: PluginSettings = {
 	ankiConnectPort: ANKI_CONNECT_DEFAULT_PORT,
 	ankiDestinationDeck: '',
 	openAiApiKey: null,
 	openAiApiKeyIdentifier: '',
+	openAiModel: DEFAULT_OPENAI_MODEL,
 	gptAdvancedOptions: {
 		temperature: 1,
 		top_p: 1.0,

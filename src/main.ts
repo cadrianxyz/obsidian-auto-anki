@@ -12,13 +12,10 @@ import {
 import {
 	PluginSettings,
 	DEFAULT_SETTINGS,
+	DEFAULT_OPENAI_MODEL,
 } from './settings';
 
 import { ExportModal } from './modal';
-// import {
-//     electronEncrypt,
-//     electronDecrypt,
-// } from './utils/enc';
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
 import { isNumeric } from './utils/validations';
 import { StatusBarElement } from './utils/cusom-types';
@@ -76,7 +73,6 @@ export default class AutoAnkiPlugin extends Plugin {
 						return;
 					}
 
-					// const apiKey = electronDecrypt(this.settings.openAiApiKey);
 					const apiKey = this.settings.openAiApiKey;
 					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 					new ExportModal(
@@ -84,6 +80,7 @@ export default class AutoAnkiPlugin extends Plugin {
 						this.statusBar,
 						view.data,
 						apiKey,
+						this.settings.openAiModel || DEFAULT_OPENAI_MODEL,
 						port,
 						this.settings.ankiDestinationDeck,
 						this.settings.gptAdvancedOptions,
@@ -112,7 +109,6 @@ export default class AutoAnkiPlugin extends Plugin {
 						return;
 					}
 
-					// const apiKey = electronDecrypt(this.settings.openAiApiKey);
 					const apiKey = this.settings.openAiApiKey;
 					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 					new ExportModal(
@@ -120,6 +116,7 @@ export default class AutoAnkiPlugin extends Plugin {
 						this.statusBar,
 						currTextSelection,
 						apiKey,
+						this.settings.openAiModel || DEFAULT_OPENAI_MODEL,
 						port,
 						this.settings.ankiDestinationDeck,
 						this.settings.gptAdvancedOptions,
@@ -161,7 +158,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 
 		const ankiDescription = document.createElement('div');
         // use innerHTML for harcoded description
-		ankiDescription.innerHTML = '<p><a href="https://apps.ankiweb.net/">Anki</a> is an open-source flashcard program that is popular for spaced repetition. This plugin has only been tested on desktop, and requires <a href="https://foosoft.net/projects/anki-connect/">Anki Connect</a> to be installed alongside the main Anki program.</p><p>Enabling this plugin will add commands to automatically generate Question-Answer-style flashcards into the Anki system using OpenAI\'s AI models.</p><p>For information on usage, see <a href="https://github.com/ad2969/obsidian-auto-anki#readme">the instructions</a> online.</p>';
+		ankiDescription.innerHTML = '<p><a href="https://apps.ankiweb.net/">Anki</a> is an open-source flashcard program that is popular for spaced repetition. This plugin has only been tested on desktop, and requires <a href="https://foosoft.net/projects/anki-connect/">Anki Connect</a> to be installed alongside the main Anki program.</p><p>Enabling this plugin will add commands to automatically generate Question-Answer-style flashcards into the Anki system using OpenAI\'s AI models.</p><p>For information on usage, see <a href="https://github.com/cadrianxyz/obsidian-auto-anki#readme">the instructions</a> online.</p>';
         containerEl.appendChild(ankiDescription)
 		
 		new Setting(containerEl)
@@ -186,15 +183,28 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 			.setName('OpenAI API Key')
 			.setDesc(openAiDescription)
 			.addText(textComponent => textComponent
-				.setPlaceholder(`key entered: ${this.plugin.settings.openAiApiKeyIdentifier}` ?? 'NO_KEY_ENTERED')
+				.setPlaceholder(this.plugin.settings.openAiApiKeyIdentifier
+					? `key entered: ${this.plugin.settings.openAiApiKeyIdentifier}`
+					: 'NO_KEY_ENTERED')
 				.onChange(async (value) => {
-					// this.plugin.settings.openAiApiKey = electronEncrypt(value);
 					this.plugin.settings.openAiApiKey = value;
                     let identifier = 'xxxx';
                     if (value.length >= 7) {
                         identifier = `${value.slice(0,3)}...${value.slice(-4)}`
                     }
                     this.plugin.settings.openAiApiKeyIdentifier = identifier;
+					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName('OpenAI Model')
+			.setDesc(`The OpenAI model used to generate questions, e.g. ${DEFAULT_OPENAI_MODEL}. Any model your API key can use with Chat Completions works.`)
+			.addText(textComponent => textComponent
+				.setPlaceholder(DEFAULT_OPENAI_MODEL)
+				.setValue(this.plugin.settings.openAiModel)
+				.onChange(async (value) => {
+					this.plugin.settings.openAiModel = value.trim() || DEFAULT_OPENAI_MODEL;
 					await this.plugin.saveSettings();
 				})
 			);
@@ -307,7 +317,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		});
         const tempComponent = new Setting(containerEl)
             .setName('Temperature')
-            .setDesc('The sampling temperature used. Higher values increases randomness, while lower values makes the output more deterministic. (Default = 1)')
+            .setDesc('The sampling temperature used. Higher values increases randomness, while lower values makes the output more deterministic. Only sent when changed from the default; some models (such as reasoning models) only accept the default. (Default = 1)')
             .addSlider(sliderComponent => sliderComponent
                 .setValue(this.plugin.settings.gptAdvancedOptions.temperature)
                 .setLimits(0, 2, 0.1)
@@ -325,7 +335,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		});
         const topPComponent = new Setting(containerEl)
             .setName('Top P')
-            .setDesc('Value for nucleus sampling. Lower values mean the output considers the tokens comprising higher probability mass. (Default = 1)')
+            .setDesc('Value for nucleus sampling. Lower values mean the output considers the tokens comprising higher probability mass. Only sent when changed from the default; some models only accept the default. (Default = 1)')
             .addSlider(sliderComponent => sliderComponent
                 .setValue(this.plugin.settings.gptAdvancedOptions.top_p)
                 .setLimits(0, 1, 0.05)
@@ -343,7 +353,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		});
         const fPenaltyComponent = new Setting(containerEl)
             .setName('Frequency Penalty')
-            .setDesc('Positive values penalize new tokens based on their existing frequency in the text so far. Higher values decrease chance of \'repetition\'. (Default = 0)')
+            .setDesc('Positive values penalize new tokens based on their existing frequency in the text so far. Higher values decrease chance of \'repetition\'. Only sent when changed from the default; some models only accept the default. (Default = 0)')
             .addSlider(sliderComponent => sliderComponent
                 .setValue(this.plugin.settings.gptAdvancedOptions.frequency_penalty)
                 .setLimits(-2, 2, 0.1)
@@ -361,7 +371,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 		});
 		const pPenaltyComponent = new Setting(containerEl)
             .setName('Presence Penalty')
-            .setDesc('Positive values penalize new tokens based on whether they appear in the text so far. Higher values increase chance of \'creativity\'. (Default = 0)')
+            .setDesc('Positive values penalize new tokens based on whether they appear in the text so far. Higher values increase chance of \'creativity\'. Only sent when changed from the default; some models only accept the default. (Default = 0)')
             .addSlider(sliderComponent => sliderComponent
                 .setValue(this.plugin.settings.gptAdvancedOptions.presence_penalty)
                 .setLimits(-2, 2, 0.1)
@@ -377,7 +387,7 @@ class AutoAnkiSettingTab extends PluginSettingTab {
         const openAiTokenDescription = new DocumentFragment();
         const openAiTokenDescHtml = document.createElement('p');
         // use innerHTML for harcoded description
-        openAiTokenDescHtml.innerHTML = 'The maximum number of tokens consumed for each question. See <a href="https://platform.openai.com/tokenizer">tokens</a> to better understand how tokens are quantized. (Default = 16)';
+        openAiTokenDescHtml.innerHTML = 'The maximum number of tokens the answer may use for each question. Reasoning models also need tokens to think; the plugin adds room for that on top. See <a href="https://platform.openai.com/tokenizer">tokens</a> to better understand how tokens are quantized. (Default = 100)';
         openAiTokenDescription.appendChild(openAiTokenDescHtml);
 
         new Setting(containerEl)

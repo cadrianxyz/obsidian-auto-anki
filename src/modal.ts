@@ -24,6 +24,7 @@ export class ExportModal extends Modal {
     n_alt_valid: boolean;
     data: string;
     apiKey: string;
+    model: string;
     port: number;
     deck: string;
     gptAdvancedOptions: GptAdvancedOptions;
@@ -34,6 +35,7 @@ export class ExportModal extends Modal {
         statusBar: StatusBarElement,
         data: string,
         openAiApiKey: string,
+        openAiModel: string,
         ankiConnectPort: number,
         ankiDestinationDeck: string,
         gptAdvancedOptions: GptAdvancedOptions,
@@ -44,6 +46,7 @@ export class ExportModal extends Modal {
         this.statusBar = statusBar;
         this.data = data;
         this.apiKey = openAiApiKey;
+        this.model = openAiModel;
         this.port = ankiConnectPort;
         this.deck = ankiDestinationDeck;
         this.gptAdvancedOptions = gptAdvancedOptions;
@@ -110,6 +113,7 @@ export class ExportModal extends Modal {
                     if (this.statusBar.doDisplayRunning) this.statusBar.doDisplayRunning();
                     const card_sets: Array<CardInformation[]> = await convertNotesToFlashcards(
                         this.apiKey,
+                        this.model,
                         this.data,
                         this.n_q,
                         this.n_alt+1,

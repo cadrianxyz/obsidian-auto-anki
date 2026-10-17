@@ -99,10 +99,6 @@ function createMessages(notes: string, num: number) {
         }),
     } as ChatCompletionAssistantMessageParam);
 
-    console.log({
-        "questions_answers": generateRepeatedSampleOutput(num)
-    })
-
     // Insert notes
     messages.push({
         role: 'user',
@@ -112,8 +108,50 @@ function createMessages(notes: string, num: number) {
     return messages;
 }
   
+// Reasoning models spend part of max_completion_tokens thinking before they write
+// anything. Without room for that, a reply can stop before the JSON starts.
+const REASONING_ALLOWANCE_TOKENS = 8000;
+
+// Sampling settings are only sent when moved off these defaults: many current
+// models (reasoning models in particular) refuse anything but the default.
+const SAMPLING_DEFAULTS = {
+    temperature: 1,
+    top_p: 1,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+} as const;
+
+function changedSamplingOptions(options: GptAdvancedOptions) {
+    const changed: Partial<Record<keyof typeof SAMPLING_DEFAULTS, number>> = {};
+    for (const key of Object.keys(SAMPLING_DEFAULTS) as Array<keyof typeof SAMPLING_DEFAULTS>) {
+        const value = options[key];
+        if (typeof value === 'number' && value !== SAMPLING_DEFAULTS[key]) {
+            changed[key] = value;
+        }
+    }
+    return changed;
+}
+
+function describeOpenAiError(err: unknown, model: string) {
+    if (err instanceof OpenAI.APIError && err.status !== undefined) {
+        if (err.status === 401) {
+            return 'OpenAI rejected the API key (401). Check the key in the Auto Anki settings.';
+        }
+        if (err.status === 404) {
+            return `OpenAI doesn't know the model "${model}" (404). Check the model name in the Auto Anki settings.\n${err.message}`;
+        }
+        if (err.status === 429) {
+            return `OpenAI rate limit or quota reached (429).\n${err.message}`;
+        }
+        return `OpenAI returned an error (${err.status}).\n${err.message}`;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return `Could not connect to OpenAI! ${message}`;
+}
+
 export async function convertNotesToFlashcards(
     apiKey: string,
+    model: string,
     notes: string,
     num_q: number,
     num: number,
@@ -123,72 +161,64 @@ export async function convertNotesToFlashcards(
     try {
         const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
 
-        const {
-            max_tokens_per_question: tokensPerQuestion,
-            ...completionOptions
-        } = options;
-    
-        // for anki connect, the output
         response = await client.chat.completions.create({
-            ...completionOptions,
-            model: 'gpt-3.5-turbo-1106',
+            ...changedSamplingOptions(options),
+            model,
             messages: createMessages(notes, num_q),
-            max_tokens: tokensPerQuestion * num_q,
+            // max_tokens is deprecated, and reasoning models refuse it.
+            max_completion_tokens: options.max_tokens_per_question * num_q + REASONING_ALLOWANCE_TOKENS,
             n: num,
             stream: false,
             response_format: { type: "json_object" },
         } as ChatCompletionCreateParams) as ChatCompletion;
     }
     catch (err) {
-        if (!err.response) {
-            logger.log({
-                level: 'error',
-                message: `Could not connect to OpenAI! ${err.message}`
-            });
-        }
-        else {
-            const errStatus = err.response.status;
-            const errBody = err.response.data;
-            let supportingMessage = `(${errBody.error.code}) ${errBody.error.message}`;
-            if (errStatus === 401) {
-                supportingMessage = 'Check that your API Key is correct/valid!';
-            }
-            logger.log({
-                level: 'error',
-                message: `ERR ${errStatus}: Could not connect to OpenAI! ${supportingMessage}`
-            });
-        }
-        return [];
-    }
-
-    try {
-        const card_choices: Array<CardInformation[]> = [];
-        logger.log({
-            level: 'info',
-            message: `Generated ${response.choices.length} choices!`,
-        });
-
-        response.choices.forEach((set, idx) => {
-            const content = set.message.content ?? '';
-            logger.log({
-                level: 'info',
-                message: content,
-            });
-            const parsedContent = JSON.parse(content);
-            if(parsedContent["questions_answers"] === undefined) throw "";
-            logger.log({
-                level: 'info',
-                message: `Choice ${idx}: generated ${parsedContent["questions_answers"].length} questions and answers`,
-            });
-            card_choices.push(parsedContent['questions_answers'] as CardInformation[])
-        })
-        return card_choices;
-    }
-    catch (err) {
         logger.log({
             level: 'error',
-            message: `Something happened while parsing OpenAI output! Please contact a developer for more support.`,
+            message: describeOpenAiError(err, model),
         });
         return [];
     }
+
+    const card_choices: Array<CardInformation[]> = [];
+    logger.log({
+        level: 'info',
+        message: `Generated ${response.choices.length} choices!`,
+    });
+
+    for (const [idx, set] of response.choices.entries()) {
+        if (set.finish_reason === 'length') {
+            logger.log({
+                level: 'error',
+                message: `The model ran out of tokens before finishing (choice ${idx + 1}). Raise "Maximum Tokens per Question" in the Auto Anki settings, or ask for fewer questions.`,
+            });
+            return [];
+        }
+        const content = set.message.content ?? '';
+        logger.log({
+            level: 'info',
+            message: content,
+        });
+        let parsedContent;
+        try {
+            parsedContent = JSON.parse(content);
+        }
+        catch (err) {
+            parsedContent = undefined;
+        }
+        const questions = parsedContent?.["questions_answers"];
+        if (!Array.isArray(questions)) {
+            logger.log({
+                level: 'error',
+                message: `The model's reply wasn't in the expected format (choice ${idx + 1}), so no cards were made. Try again, or try a different model.`,
+            });
+            return [];
+        }
+        logger.log({
+            level: 'info',
+            message: `Choice ${idx}: generated ${questions.length} questions and answers`,
+        });
+        card_choices.push(questions as CardInformation[]);
+    }
+    return card_choices;
 }

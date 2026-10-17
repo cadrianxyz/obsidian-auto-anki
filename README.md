@@ -32,7 +32,10 @@ The following are required for the Plugin to work:
 3. Go to the Plugin Settings (Settings > Community Plugins > Auto Anki) and make sure to set the following fields appropriately:
     - Anki Port (by default, this is `8765`)
     - OpenAI API Key
+    - OpenAI Model (by default, `gpt-6-luna`). Any model your API key can use with OpenAI's Chat Completions API works
 4. Enjoy!
+
+> **Upgrading from 0.2.1:** 0.2.1 always used `gpt-3.5-turbo-1106`, which OpenAI shut down on 28 September 2026, so it can no longer generate cards. From 0.2.2 the model is a setting; your other settings carry over unchanged.
 
 ## Feature Details
 
@@ -67,4 +70,26 @@ I consider myself a complete beginner when it comes to Spaced Repetition, Anki, 
 
 ## Issues, Discussion, etc
 
-I keep track of all things related to this plugin mostly in [issues](https://github.com/ad2969/obsidian-auto-anki/issues). Feel free to report bugs and/or requests there!
+I keep track of all things related to this plugin mostly in [issues](https://github.com/cadrianxyz/obsidian-auto-anki/issues). Feel free to report bugs and/or requests there!
+
+## Development
+
+Requires Node.js 22 or later.
+
+```bash
+npm install
+npm run dev     # rebuilds main.js on every change
+npm run build   # type-checks, then makes a production build
+```
+
+To test in a vault, point `OBSIDIAN_PLUGIN_DIR` at the plugin's folder inside that vault. Every build is then copied there (`main.js`, `manifest.json`, `styles.css`):
+
+```bash
+OBSIDIAN_PLUGIN_DIR=~/path/to/vault/.obsidian/plugins/auto-anki npm run dev
+```
+
+Then reload the plugin in Obsidian (Settings > Community Plugins), or install the [Hot Reload](https://github.com/pjeby/hot-reload) plugin to have it reloaded after every build.
+
+### Releasing
+
+`npm version <new-version>` updates `manifest.json` and `versions.json`. Push the tag (`git push origin <new-version>`): the release workflow builds the plugin and attaches `main.js`, `manifest.json` and `styles.css` to a GitHub release with that tag. Push the branch afterwards, since Obsidian reads `manifest.json` from the default branch to decide which release to install.

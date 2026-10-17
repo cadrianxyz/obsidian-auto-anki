@@ -1,6 +1,9 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
+import { copyFileSync, mkdirSync } from "fs";
+import { homedir } from "os";
+import { join, resolve } from "path";
 
 const banner =
 `/*
@@ -10,6 +13,31 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = (process.argv[2] === "production");
+
+// Set OBSIDIAN_PLUGIN_DIR to a vault's plugin folder, e.g.
+//   OBSIDIAN_PLUGIN_DIR=~/MyVault/.obsidian/plugins/auto-anki npm run dev
+// and every build is copied there, ready for Obsidian to reload.
+const PLUGIN_FILES = ["main.js", "manifest.json", "styles.css"];
+
+function pluginDir() {
+	const dir = process.env.OBSIDIAN_PLUGIN_DIR;
+	if (!dir) return null;
+	return resolve(dir.startsWith("~") ? join(homedir(), dir.slice(1)) : dir);
+}
+
+const copyToVault = {
+	name: "copy-to-vault",
+	setup(build) {
+		const dir = pluginDir();
+		if (!dir) return;
+		build.onEnd((result) => {
+			if (result.errors.length > 0) return;
+			mkdirSync(dir, { recursive: true });
+			for (const file of PLUGIN_FILES) copyFileSync(file, join(dir, file));
+			console.log(`[copy-to-vault] copied ${PLUGIN_FILES.join(", ")} to ${dir}`);
+		});
+	},
+};
 
 const context = await esbuild.context({
 	banner: {
@@ -38,6 +66,7 @@ const context = await esbuild.context({
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile: "main.js",
+	plugins: [copyToVault],
 });
 
 if (prod) {
