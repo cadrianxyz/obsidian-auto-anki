@@ -5,8 +5,8 @@ Plugin for [Obsidian.md](https://obsidian.md/) that uses OpenAI's GPT LLM to aut
 > The plugin **only works for desktop**.
 
 The plugin introduces two new "commands" into obsidian:
-- _Export Current File to Anki_
-- _Export Highlighted Text to Anki_ (only available in an active `Editable` window open - i.e. you need to have a document open, and it needs to be in `edit` mode)
+- _Export current file to Anki_
+- _Export highlighted text to Anki_ (only available in an active `Editable` window open - i.e. you need to have a document open, and it needs to be in `edit` mode)
 
 The command palette can be accessed on Obsidian through the following hotkey (default): `CMD` + `SHIFT` + `P`
 
@@ -21,6 +21,7 @@ The two new commands look like the following:
 ## Plugin Requirements
 
 The following are required for the Plugin to work:
+- Obsidian 1.11.4 or newer, on desktop (older Obsidian versions get Auto Anki 0.2.2)
 - An [OpenAI](https://openai.com/) Account and an [OpenAI API Key](https://platform.openai.com/account/api-keys)
 - The [Anki](https://apps.ankiweb.net/) program, installed locally
 - [Anki Connect](https://github.com/FooSoft/anki-connect), to expose an Anki API for Obsidian to make calls to
@@ -30,16 +31,20 @@ The following are required for the Plugin to work:
 1. Download and install the plugin (Options > Community Plugins)
 2. Ensure that you have all the requirements in the [Plugin Requirements](#plugin-requirements)
 3. Go to the Plugin Settings (Settings > Community Plugins > Auto Anki) and make sure to set the following fields appropriately:
-    - Anki Port (by default, this is `8765`)
-    - OpenAI API Key
-    - OpenAI Model (by default, `gpt-6-luna`). Any model your API key can use with OpenAI's Chat Completions API works
+    - Anki port (by default, this is `8765`)
+    - OpenAI API key. It is saved in Obsidian's Keychain on this device (you'll see it under Settings > Keychain as `auto-anki-openai-api-key`), not in your vault. Obsidian encrypts Keychain secrets with your operating system's secret store when one is available (Settings > Keychain says if it isn't). The Keychain doesn't sync, so each device you use Auto Anki on needs the key entered once
+    - OpenAI model (by default, `gpt-6-luna`). Any OpenAI chat model your API key can use works
 4. Enjoy!
 
 > **Upgrading from 0.2.1:** 0.2.1 always used `gpt-3.5-turbo-1106`, which OpenAI shut down on 28 September 2026, so it can no longer generate cards. From 0.2.2 the model is a setting; your other settings carry over unchanged.
 
+> **Upgrading to 0.3.0:** earlier versions stored your OpenAI API key in plain text in the plugin's `data.json`, inside your vault, so anything that copies your vault (sync, backups, git) copied the key too. 0.3.0 moves it into Obsidian's Keychain automatically the first time it loads, removes it from `data.json`, and shows a notice when it has. Older copies of your vault may still contain the key, so consider replacing it at OpenAI. On any other device where you use the same vault, enter the key once in the Auto Anki settings.
+
+> **Also in 0.3.0:** the temperature, top-p, frequency penalty and presence penalty settings are gone. Current OpenAI models only accept their default values, so changing them made requests fail. **Reasoning effort** replaces them as the way to trade speed and cost against quality. **Maximum tokens per question** is replaced by **Maximum output tokens**, a single cap per request that includes the model's reasoning. 0.3.0 needs Obsidian 1.11.4 or newer.
+
 ## Feature Details
 
-#### Exporting an Entire File to Anki (Command: _Export Current File to Anki_)
+#### Exporting an Entire File to Anki (Command: _Export current file to Anki_)
 This command allows you to use the contents of the currently-opened file to send to GPT and generate a list of questions and answers.
 
 ![prompt-1](media/prompt-1.png)
@@ -57,7 +62,7 @@ An indicator will show whether `auto-anki` is currently generating your flash ca
 
 ![status-bar-running](media/status-bar-running.png)
 
-#### Exporting Highlighted Text to Anki (Command: _Export Highlighted Text to Anki_)
+#### Exporting Highlighted Text to Anki (Command: _Export highlighted text to Anki_)
 This command is similar to "Exporting an Entire File to Anki", but this allows you to use the currently-highlighted text (instead of the whole file) to send to GPT and generate a list of questions and questions. (Important Note: file needs to be in `edit` mode for the command to be available).
 
 ## Motivation
@@ -80,6 +85,7 @@ Requires Node.js 22 or later.
 npm install
 npm run dev     # rebuilds main.js on every change
 npm run build   # type-checks, then makes a production build
+npm run lint    # checks the code with ESLint, including Obsidian's own plugin-review rules
 ```
 
 To test in a vault, point `OBSIDIAN_PLUGIN_DIR` at the plugin's folder inside that vault. Every build is then copied there (`main.js`, `manifest.json`, `styles.css`):
