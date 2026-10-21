@@ -8,13 +8,13 @@ class ObsidianNoticeTransport extends Transport {
         super(opts);
     }
   
-    log(info: any, callback: () => void) {
+    log(info: { message?: unknown }, callback: () => void) {
         setImmediate(() => {
             this.emit('logged', info);
         });
     
         // Perform the writing to the remote service
-        new Notice(`ERROR ("auto-anki" plugin)\n${info.message}`, 0)
+        new Notice(`ERROR ("auto-anki" plugin)\n${String(info.message)}`, 0)
         callback();
     }
 }

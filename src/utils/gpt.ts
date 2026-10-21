@@ -2,9 +2,7 @@ import OpenAI from 'openai';
 import type {
     ChatCompletion,
     ChatCompletionCreateParams,
-    ChatCompletionUserMessageParam,
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionSystemMessageParam,
+    ChatCompletionMessageParam,
 } from 'openai/resources';
 import logger from '../logger';
 import { GenerationOptions } from '../settings';
@@ -76,19 +74,20 @@ function generateRepeatedSampleOutput(num: number) {
 }
 
 function createMessages(notes: string, num: number) {
-    const messages = [];
+    // Typed up front, so each push below is checked without a cast.
+    const messages: ChatCompletionMessageParam[] = [];
     messages.push({
         role: 'system',
         content: `You will be provided notes on a specific topic. The notes are formatted in markdown. Based on the given notes, make a list of ${num} questions and short answers that can be used for reviewing said notes by spaced repetition. Use the following guidelines:
         - output the questions and answers in the following JSON format { "questions_answers": [{ "q": "<generated question>", "a": "<generated answer>" }] }
         - ensure that the questions cover the entire portion of the given notes, do not come up with similar questions or repeat the same questions
-    `} as ChatCompletionSystemMessageParam)
+    `});
 
     // Insert sample user prompt
     messages.push({
         role: 'user',
         content: SAMPLE_NOTE,
-    } as ChatCompletionUserMessageParam);
+    });
     
 
     // Insert sample assistant output (JSON format)
@@ -97,17 +96,36 @@ function createMessages(notes: string, num: number) {
         content: JSON.stringify({
             "questions_answers": generateRepeatedSampleOutput(num)
         }),
-    } as ChatCompletionAssistantMessageParam);
+    });
 
     // Insert notes
     messages.push({
         role: 'user',
         content: `\n${notes.trim()}\n`,
-    } as ChatCompletionUserMessageParam);
+    });
 
     return messages;
 }
   
+// The model's reply is untrusted text: check it really is { questions_answers: [{ q, a }] }.
+// Returns null if the shape is wrong; entries that aren't a question/answer pair are dropped.
+function parseQuestionsAnswers(content: string): CardInformation[] | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(content);
+    }
+    catch {
+        return null;
+    }
+    if (parsed === null || typeof parsed !== 'object') return null;
+    const list = (parsed as { questions_answers?: unknown }).questions_answers;
+    if (!Array.isArray(list)) return null;
+    return list.filter((item): item is CardInformation =>
+        item !== null && typeof item === 'object' &&
+        typeof (item as { q?: unknown }).q === 'string' &&
+        typeof (item as { a?: unknown }).a === 'string');
+}
+
 function describeOpenAiError(err: unknown, model: string) {
     if (err instanceof OpenAI.APIError && err.status !== undefined) {
         if (err.status === 401) {
@@ -117,7 +135,7 @@ function describeOpenAiError(err: unknown, model: string) {
             return `OpenAI doesn't know the model "${model}" (404). Check the model name in the Auto Anki settings.\n${err.message}`;
         }
         if (err.status === 400 && /reasoning_effort/.test(err.message)) {
-            return `The model "${model}" doesn't accept the chosen Reasoning Effort. Set Reasoning Effort to "Model default" in the Auto Anki settings, or pick another level.\n${err.message}`;
+            return `The model "${model}" doesn't accept the chosen reasoning effort. Set "Reasoning effort" to "Model default" in the Auto Anki settings, or pick another level.\n${err.message}`;
         }
         if (err.status === 429) {
             return `OpenAI rate limit or quota reached (429).\n${err.message}`;
@@ -173,7 +191,7 @@ export async function convertNotesToFlashcards(
         if (set.finish_reason === 'length') {
             logger.log({
                 level: 'error',
-                message: `The model ran out of tokens before finishing (choice ${idx + 1}). Raise "Maximum Output Tokens" or lower "Reasoning Effort" in the Auto Anki settings, or ask for fewer questions.`,
+                message: `The model ran out of tokens before finishing (choice ${idx + 1}). Raise "Maximum output tokens" or lower "Reasoning effort" in the Auto Anki settings, or ask for fewer questions.`,
             });
             return [];
         }
@@ -182,15 +200,8 @@ export async function convertNotesToFlashcards(
             level: 'info',
             message: content,
         });
-        let parsedContent;
-        try {
-            parsedContent = JSON.parse(content);
-        }
-        catch (err) {
-            parsedContent = undefined;
-        }
-        const questions = parsedContent?.["questions_answers"];
-        if (!Array.isArray(questions)) {
+        const questions = parseQuestionsAnswers(content);
+        if (questions == null) {
             logger.log({
                 level: 'error',
                 message: `The model's reply wasn't in the expected format (choice ${idx + 1}), so no cards were made. Try again, or try a different model.`,
@@ -201,7 +212,7 @@ export async function convertNotesToFlashcards(
             level: 'info',
             message: `Choice ${idx}: generated ${questions.length} questions and answers`,
         });
-        card_choices.push(questions as CardInformation[]);
+        card_choices.push(questions);
     }
     return card_choices;
 }

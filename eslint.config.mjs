@@ -35,4 +35,13 @@ export default defineConfig(
 	},
 	// Obsidian's own rules for community plugins, the same ones its review uses.
 	...obsidianmd.configs.recommended,
+	{
+		rules: {
+			// UI text must be in sentence case. These names keep their capitals. Setting
+			// "brands" replaces the rule's built-in list, so every brand used is listed here.
+			"obsidianmd/ui/sentence-case": ["warn", {
+				brands: ["Auto Anki", "AnkiConnect", "Anki", "Obsidian", "Keychain", "OpenAI", "GPT", "Git"],
+			}],
+		},
+	},
 );
