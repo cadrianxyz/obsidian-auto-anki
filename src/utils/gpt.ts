@@ -6,8 +6,8 @@ import type {
     ChatCompletionAssistantMessageParam,
     ChatCompletionSystemMessageParam,
 } from 'openai/resources';
-import logger from 'src/logger';
-import { GptAdvancedOptions } from 'src/settings';
+import logger from '../logger';
+import { GptAdvancedOptions } from '../settings';
 
 export interface CardInformation {
     q: string;
