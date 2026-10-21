@@ -13,17 +13,34 @@ import {
 	PluginSettings,
 	DEFAULT_SETTINGS,
 	DEFAULT_OPENAI_MODEL,
+	LegacyGenerationFields,
+	REASONING_EFFORT_OPTIONS,
+	ReasoningEffort,
+	migrateLegacyGenerationOptions,
 } from './settings';
 
 import { ExportModal } from './modal';
+import {
+	KeyMigrationResult,
+	LegacyKeyFields,
+	getOpenAiApiKey,
+	isKeychainAvailable,
+	maskApiKey,
+	migrateLegacyApiKey,
+	setOpenAiApiKey,
+} from './utils/api-key';
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
 import { isNumeric } from './utils/validations';
 import { StatusBarElement } from './utils/cusom-types';
 
+// What data.json may contain: current settings, plus fields older versions kept there.
+type StoredSettings = Partial<PluginSettings> & LegacyKeyFields & LegacyGenerationFields;
+
 export default class AutoAnkiPlugin extends Plugin {
-	settings: PluginSettings;
-	statusBar: StatusBarElement;
-	statusBarIcon: HTMLElement;
+	// Assigned in onload(), which Obsidian always calls before anything else uses them.
+	settings!: PluginSettings;
+	statusBar!: StatusBarElement;
+	statusBarIcon!: HTMLElement;
 	
 	async onload() {
 		await this.loadSettings();
@@ -34,8 +51,8 @@ export default class AutoAnkiPlugin extends Plugin {
 
 		this.statusBar = this.addStatusBarItem();
 		this.statusBar.className = 'status-bar-auto-anki'
-		this.statusBarIcon = this.statusBar.createEl('span', { cls: 'status-bar-icon' });
-		this.statusBar.createEl('div', { text: 'auto-anki' });
+		this.statusBarIcon = this.statusBar.createSpan({ cls: 'status-bar-icon' });
+		this.statusBar.createDiv({ text: 'Auto Anki' });
 		this.statusBar.doReset = () => {
 			setIcon(this.statusBarIcon, 'check-circle-2');
 			this.statusBar.classList.remove('--running');
@@ -56,12 +73,8 @@ export default class AutoAnkiPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'export-current-file-to-anki',
-			name: 'Export Current File to Anki',
+			name: 'Export current file to Anki',
 			checkCallback: (checking: boolean) => {
-				if (this.settings.openAiApiKey == null) {
-					return false;
-				}
-
 				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (view == null) {
 					return false;
@@ -73,7 +86,8 @@ export default class AutoAnkiPlugin extends Plugin {
 						return;
 					}
 
-					const apiKey = this.settings.openAiApiKey;
+					const apiKey = this.requireApiKey();
+					if (apiKey == null) return;
 					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 					new ExportModal(
 						this.app,
@@ -83,7 +97,7 @@ export default class AutoAnkiPlugin extends Plugin {
 						this.settings.openAiModel || DEFAULT_OPENAI_MODEL,
 						port,
 						this.settings.ankiDestinationDeck,
-						this.settings.gptAdvancedOptions,
+						this.settings.generation,
 						defaultsFile.numQuestions,
 						defaultsFile.numAlternatives,
 					).open();
@@ -95,13 +109,9 @@ export default class AutoAnkiPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'export-text-selection-to-anki',
-			name: 'Export Highlighted Text to Anki',
-			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
+			name: 'Export highlighted text to Anki',
+			editorCheckCallback: (checking: boolean, editor: Editor) => {
 				const currTextSelection = editor.getSelection();
-
-				if (this.settings.openAiApiKey == null) {
-					return false;
-				}
 
 				if (!checking) {
 					if (currTextSelection.length == 0) {
@@ -109,7 +119,8 @@ export default class AutoAnkiPlugin extends Plugin {
 						return;
 					}
 
-					const apiKey = this.settings.openAiApiKey;
+					const apiKey = this.requireApiKey();
+					if (apiKey == null) return;
 					const port = this.settings.ankiConnectPort || ANKI_CONNECT_DEFAULT_PORT;
 					new ExportModal(
 						this.app,
@@ -119,7 +130,7 @@ export default class AutoAnkiPlugin extends Plugin {
 						this.settings.openAiModel || DEFAULT_OPENAI_MODEL,
 						port,
 						this.settings.ankiDestinationDeck,
-						this.settings.gptAdvancedOptions,
+						this.settings.generation,
 						defaultsTextSelection.numQuestions,
 						defaultsTextSelection.numAlternatives,
 					).open();
@@ -134,7 +145,49 @@ export default class AutoAnkiPlugin extends Plugin {
 	}
 	
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		// data.json can hold anything (an older version's settings, or nothing on a fresh
+		// install), so it's read as unknown and narrowed, rather than trusted as PluginSettings.
+		const stored: unknown = await this.loadData();
+		const data = (stored !== null && typeof stored === 'object' ? stored : {}) as StoredSettings;
+		const migration = migrateLegacyApiKey(this.app, data);
+		const generationMigration = migrateLegacyGenerationOptions(data);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+		// Nested, so merged separately: a stored object would otherwise replace every default.
+		this.settings.generation = Object.assign({}, DEFAULT_SETTINGS.generation, data.generation);
+		if (migration === 'moved' || migration === 'kept-keychain' || migration === 'cleaned' || generationMigration.removed) {
+			// Rewrite data.json now, so the key is gone from the vault straight away.
+			await this.saveSettings();
+		}
+		this.reportKeyMigration(migration);
+		if (generationMigration.hadCustomSampling) {
+			new Notice('Auto Anki removed its temperature, top-p and penalty settings, and the values you had set: current OpenAI models only accept their defaults. To trade speed and cost against quality, use the reasoning effort setting instead.', 0);
+		}
+	}
+
+	reportKeyMigration(result: KeyMigrationResult) {
+		const replaceAdvice = 'Older copies of your vault (synced, backed up or in Git) may still contain it, so consider replacing the key at OpenAI.';
+		if (result === 'moved') {
+			new Notice(`Auto Anki moved your OpenAI API key out of your vault and into Obsidian's Keychain. It's no longer stored in the plugin's data.json. ${replaceAdvice}`, 0);
+		}
+		else if (result === 'kept-keychain') {
+			new Notice(`Auto Anki removed an OpenAI API key from the plugin's data.json. This device's Keychain already held a different key, and that one is now used. ${replaceAdvice}`, 0);
+		}
+		else if (result === 'unavailable') {
+			new Notice('Auto Anki needs Obsidian 1.11.4 or newer to keep your OpenAI API key in the Keychain. Your key is still in the plugin\'s data.json; update Obsidian to move it.', 0);
+		}
+		else if (result === 'failed') {
+			new Notice('Auto Anki could not move your OpenAI API key into Obsidian\'s Keychain, so it is still in the plugin\'s data.json. Try re-entering it in the Auto Anki settings.', 0);
+		}
+	}
+
+	// The key is read from the Keychain each time, so a key added or changed in
+	// Settings → Keychain is picked up without reloading the plugin.
+	requireApiKey(): string | null {
+		const apiKey = getOpenAiApiKey(this.app);
+		if (apiKey == null) {
+			new Notice('No OpenAI API key on this device. Add one in the Auto Anki settings. Keys are kept in Obsidian\'s Keychain, which doesn\'t sync with your vault, so each device needs the key once.');
+		}
+		return apiKey;
 	}
 	
 	async saveSettings() {
@@ -144,62 +197,66 @@ export default class AutoAnkiPlugin extends Plugin {
 
 class AutoAnkiSettingTab extends PluginSettingTab {
 	plugin: AutoAnkiPlugin;
-	maxFilesSetting: Setting;
-	
+
 	constructor(app: App, plugin: AutoAnkiPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
-	
+
+	// Obsidian 1.13+ prefers declarative settings (getSettingDefinitions), which also makes
+	// them searchable; the linter warns about this. 0.3.0 still supports Obsidian 1.11.4,
+	// which doesn't have them, so the tab is built here instead. Phase 1 rebuilds this screen.
 	display(): void {
 		const { containerEl } = this;
-		
 		containerEl.empty();
 
-		const ankiDescription = document.createElement('div');
-        // use innerHTML for harcoded description
-		ankiDescription.innerHTML = '<p><a href="https://apps.ankiweb.net/">Anki</a> is an open-source flashcard program that is popular for spaced repetition. This plugin has only been tested on desktop, and requires <a href="https://foosoft.net/projects/anki-connect/">Anki Connect</a> to be installed alongside the main Anki program.</p><p>Enabling this plugin will add commands to automatically generate Question-Answer-style flashcards into the Anki system using OpenAI\'s AI models.</p><p>For information on usage, see <a href="https://github.com/cadrianxyz/obsidian-auto-anki#readme">the instructions</a> online.</p>';
-        containerEl.appendChild(ankiDescription)
-		
+		// Introduction, built with Obsidian's element helpers rather than an HTML string.
+		const intro = containerEl.createDiv();
+		const about = intro.createEl('p');
+		about.createEl('a', { text: 'Anki', href: 'https://apps.ankiweb.net/' });
+		about.appendText(' is an open-source flashcard program that is popular for spaced repetition. This plugin only works on desktop, and needs the ');
+		about.createEl('a', { text: 'AnkiConnect', href: 'https://ankiweb.net/shared/info/2055492159' });
+		about.appendText(' add-on installed in Anki.');
+		intro.createEl('p', { text: 'It adds commands that turn a note, or the text you select, into question-and-answer flashcards in Anki, using OpenAI models.' });
+		intro.createEl('p').createEl('a', { text: 'How to use Auto Anki', href: 'https://github.com/cadrianxyz/obsidian-auto-anki#readme' });
+
 		new Setting(containerEl)
-			.setName('Anki Port')
-			.setDesc('The port number used to host Anki Connect')
+			.setName('Anki port')
+			.setDesc('The port AnkiConnect listens on.')
 			.addText(textComponent => textComponent
-				.setPlaceholder('Anki Connect Default: 8765')
+				.setPlaceholder('AnkiConnect default: 8765')
 				.setValue(String(this.plugin.settings.ankiConnectPort))
 				.onChange(async (value) => {
 					this.plugin.settings.ankiConnectPort = Number(value);
 					await this.plugin.saveSettings();
 				})
 			);
-		
-		const openAiDescription = new DocumentFragment();
-		const openAiDescHtml = document.createElement('p');
-        // use innerHTML for harcoded description
-		openAiDescHtml.innerHTML = 'The API Key associated with your OpenAI account, used for querying GPT. Go <a href="https://platform.openai.com/account/api-keys">here</a> to obtain one.';
-		openAiDescription.appendChild(openAiDescHtml);
 
 		new Setting(containerEl)
-			.setName('OpenAI API Key')
-			.setDesc(openAiDescription)
-			.addText(textComponent => textComponent
-				.setPlaceholder(this.plugin.settings.openAiApiKeyIdentifier
-					? `key entered: ${this.plugin.settings.openAiApiKeyIdentifier}`
-					: 'NO_KEY_ENTERED')
-				.onChange(async (value) => {
-					this.plugin.settings.openAiApiKey = value;
-                    let identifier = 'xxxx';
-                    if (value.length >= 7) {
-                        identifier = `${value.slice(0,3)}...${value.slice(-4)}`
-                    }
-                    this.plugin.settings.openAiApiKeyIdentifier = identifier;
-					await this.plugin.saveSettings();
-				})
-			);
+			.setName('OpenAI API key')
+			.setDesc(createFragment(frag => {
+				frag.appendText('The API key for your OpenAI account. You can create one in the ');
+				frag.createEl('a', { text: 'OpenAI dashboard', href: 'https://platform.openai.com/account/api-keys' });
+				frag.appendText(". It's saved in Obsidian's Keychain on this device, not in your vault, so each device needs it once.");
+			}))
+			.addText(textComponent => {
+				const savedKey = getOpenAiApiKey(this.app);
+				textComponent.inputEl.type = 'password';
+				textComponent
+					.setPlaceholder(!isKeychainAvailable(this.app)
+						? 'Needs Obsidian 1.11.4 or newer'
+						: savedKey ? `Key saved: ${maskApiKey(savedKey)}` : 'No key saved on this device')
+					.setDisabled(!isKeychainAvailable(this.app))
+					.onChange((value) => {
+						// An empty box never deletes a saved key; keys are removed in Obsidian's Keychain settings.
+						if (value.trim() === '') return;
+						setOpenAiApiKey(this.app, value);
+					});
+			});
 
 		new Setting(containerEl)
-			.setName('OpenAI Model')
-			.setDesc(`The OpenAI model used to generate questions, e.g. ${DEFAULT_OPENAI_MODEL}. Any model your API key can use with Chat Completions works.`)
+			.setName('OpenAI model')
+			.setDesc(`The OpenAI model that writes the questions, for example ${DEFAULT_OPENAI_MODEL}. Any OpenAI chat model your API key can use works.`)
 			.addText(textComponent => textComponent
 				.setPlaceholder(DEFAULT_OPENAI_MODEL)
 				.setValue(this.plugin.settings.openAiModel)
@@ -209,11 +266,9 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 				})
 			);
 
-        containerEl.createEl('h2', { text: 'Default Options for Exporting' });
-		
 		new Setting(containerEl)
-			.setName('Anki Default Deck Name')
-			.setDesc('The name of the deck in Anki you want to export flashcards to, by default')
+			.setName('Default Anki deck')
+			.setDesc('The Anki deck that flashcards are exported to, unless you pick another one when exporting.')
 			.addText(textComponent => textComponent
 				.setPlaceholder('Default')
 				.setValue(String(this.plugin.settings.ankiDestinationDeck))
@@ -223,191 +278,86 @@ class AutoAnkiSettingTab extends PluginSettingTab {
 				})
 			);
 
-        containerEl.createEl('p', { text: '--> For exporting full files' });
-        
+		const defaults = this.plugin.settings.questionGenerationDefaults;
+		const alternativesDesc = 'How many alternative versions of each question to generate, to choose from. Zero means none. Each alternative is a full extra generation, so it adds to the cost.';
+
+		new Setting(containerEl).setName('Exporting a whole file').setHeading();
+		this.addCountSetting('Number of questions', 'How many questions to generate from the file.',
+			() => defaults.file.numQuestions, (n) => { defaults.file.numQuestions = n; });
+		this.addCountSetting('Number of alternatives', alternativesDesc,
+			() => defaults.file.numAlternatives, (n) => { defaults.file.numAlternatives = n; });
+
+		new Setting(containerEl).setName('Exporting selected text').setHeading();
+		this.addCountSetting('Number of questions', 'How many questions to generate from the selected text.',
+			() => defaults.textSelection.numQuestions, (n) => { defaults.textSelection.numQuestions = n; });
+		this.addCountSetting('Number of alternatives', alternativesDesc,
+			() => defaults.textSelection.numAlternatives, (n) => { defaults.textSelection.numAlternatives = n; });
+
+		new Setting(containerEl).setName('Advanced').setHeading();
+
+		// Reasoning effort replaced the temperature, top-p and penalty sliders of 0.2.x:
+		// current OpenAI models only accept the defaults for those.
+		const effortLabels: Record<ReasoningEffort, string> = {
+			default: 'Model default (recommended)',
+			none: 'None (fastest; not every model allows it)',
+			low: 'Low',
+			medium: 'Medium',
+			high: 'High',
+		};
 		new Setting(containerEl)
-            .setName('Number of Questions')
-            .setDesc('The number of questions to generate from the file.')
-            .addText(textComponent => textComponent
-                .setValue(String(this.plugin.settings.questionGenerationDefaults.file.numQuestions))
-                .onChange(async (value) => {
-					if (value == '') {
-						this.plugin.settings.questionGenerationDefaults.file.numQuestions = 0;
+			.setName('Reasoning effort')
+			.setDesc('How much the model thinks before writing questions. More effort can give better questions but is slower and costs more. Only reasoning models use this (most current OpenAI models are), and not every model accepts every level. Models without reasoning reject it, so leave those on the model default.')
+			.addDropdown(dropdown => {
+				for (const option of REASONING_EFFORT_OPTIONS) dropdown.addOption(option, effortLabels[option]);
+				dropdown
+					.setValue(this.plugin.settings.generation.reasoningEffort)
+					.onChange(async (value) => {
+						this.plugin.settings.generation.reasoningEffort = value as ReasoningEffort;
 						await this.plugin.saveSettings();
-					}
-					else if (!isNumeric(value)) {
-						new Notice('The value you entered is not a number value');
-					}
-					else {
-						this.plugin.settings.questionGenerationDefaults.file.numQuestions = Number(value);
-						await this.plugin.saveSettings();
-					}
-                })
-            );
+					});
+			});
 
 		new Setting(containerEl)
-			.setName('Number of Alternatives')
-			.setDesc('The number of alternatives to generate for each question. Zero means no alteratives.')
+			.setName('Maximum output tokens')
+			.setDesc(`The most tokens the model may use for one request, including its reasoning. It's a ceiling, not a target: you're only charged for tokens actually used. Raise it if generation stops with "ran out of tokens". (Default: ${DEFAULT_SETTINGS.generation.maxOutputTokens})`)
 			.addText(textComponent => textComponent
-				.setValue(String(this.plugin.settings.questionGenerationDefaults.file.numAlternatives))
+				.setValue(String(this.plugin.settings.generation.maxOutputTokens))
 				.onChange(async (value) => {
 					if (value == '') {
-						this.plugin.settings.questionGenerationDefaults.file.numAlternatives = 0;
+						this.plugin.settings.generation.maxOutputTokens = DEFAULT_SETTINGS.generation.maxOutputTokens;
 						await this.plugin.saveSettings();
 					}
-					else if (!isNumeric(value)) {
-						new Notice('The value you entered is not a number value');
+					else if (!isNumeric(value) || Number(value) <= 0) {
+						new Notice('The value you entered is not a positive number');
 					}
 					else {
-						this.plugin.settings.questionGenerationDefaults.file.numAlternatives = Number(value);
+						this.plugin.settings.generation.maxOutputTokens = Number(value);
 						await this.plugin.saveSettings();
 					}
 				})
 			);
+	}
 
-        containerEl.createEl('p', { text: '--> For exporting selected text' });
-        
-		new Setting(containerEl)
-            .setName('Number of Questions')
-            .setDesc('The number of questions to generate from the selected text.')
-            .addText(textComponent => textComponent
-                .setValue(String(this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions))
-                .onChange(async (value) => {
-					if (value == '') {
-						this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions = 0;
-						await this.plugin.saveSettings();
-					}
-					else if (!isNumeric(value)) {
-						new Notice('The value you entered is not a number value');
-					}
-					else {
-						this.plugin.settings.questionGenerationDefaults.textSelection.numQuestions = Number(value);
-						await this.plugin.saveSettings();
-					}
-                })
-            );
-
-		new Setting(containerEl)
-			.setName('Number of Alternatives')
-			.setDesc('The number of alternatives to generate for each question. Zero means no alteratives.')
+	// A text box holding a whole number: empty means 0, anything else non-numeric is refused.
+	private addCountSetting(name: string, desc: string, get: () => number, set: (value: number) => void) {
+		new Setting(this.containerEl)
+			.setName(name)
+			.setDesc(desc)
 			.addText(textComponent => textComponent
-				.setValue(String(this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives))
+				.setValue(String(get()))
 				.onChange(async (value) => {
 					if (value == '') {
-						this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives = 0;
+						set(0);
 						await this.plugin.saveSettings();
 					}
 					else if (!isNumeric(value)) {
 						new Notice('The value you entered is not a number value');
 					}
 					else {
-						this.plugin.settings.questionGenerationDefaults.textSelection.numAlternatives = Number(value);
+						set(Number(value));
 						await this.plugin.saveSettings();
 					}
 				})
 			);
-
-        containerEl.createEl('h2', { text: 'Advanced Options for OpenAI\'s GPT Models' });
-
-        // See OpenAI docs for more info:
-        // https://platform.openai.com/docs/api-reference/completions
-        const tempValComponent = createEl('span', {
-			text: String(this.plugin.settings.gptAdvancedOptions.temperature),
-			cls: 'slider-val', // used to make custom slider component with displayed value next to it
-		});
-        const tempComponent = new Setting(containerEl)
-            .setName('Temperature')
-            .setDesc('The sampling temperature used. Higher values increases randomness, while lower values makes the output more deterministic. Only sent when changed from the default; some models (such as reasoning models) only accept the default. (Default = 1)')
-            .addSlider(sliderComponent => sliderComponent
-                .setValue(this.plugin.settings.gptAdvancedOptions.temperature)
-                .setLimits(0, 2, 0.1)
-                .onChange(async (value) => {
-                    this.plugin.settings.gptAdvancedOptions.temperature = value;
-                    tempValComponent.textContent = String(value);
-                    await this.plugin.saveSettings();
-                })
-            );
-        tempComponent.settingEl.appendChild(tempValComponent);
-
-        const topPValComponent = createEl('span', {
-			text: String(this.plugin.settings.gptAdvancedOptions.top_p),
-			cls: 'slider-val',
-		});
-        const topPComponent = new Setting(containerEl)
-            .setName('Top P')
-            .setDesc('Value for nucleus sampling. Lower values mean the output considers the tokens comprising higher probability mass. Only sent when changed from the default; some models only accept the default. (Default = 1)')
-            .addSlider(sliderComponent => sliderComponent
-                .setValue(this.plugin.settings.gptAdvancedOptions.top_p)
-                .setLimits(0, 1, 0.05)
-                .onChange(async (value) => {
-                    this.plugin.settings.gptAdvancedOptions.top_p = value;
-                    topPValComponent.textContent = String(value);
-                    await this.plugin.saveSettings();
-                })
-            );
-        topPComponent.settingEl.appendChild(topPValComponent);
-
-        const fPenaltyValComponent = createEl('span', {
-			text: String(this.plugin.settings.gptAdvancedOptions.frequency_penalty),
-			cls: 'slider-val',
-		});
-        const fPenaltyComponent = new Setting(containerEl)
-            .setName('Frequency Penalty')
-            .setDesc('Positive values penalize new tokens based on their existing frequency in the text so far. Higher values decrease chance of \'repetition\'. Only sent when changed from the default; some models only accept the default. (Default = 0)')
-            .addSlider(sliderComponent => sliderComponent
-                .setValue(this.plugin.settings.gptAdvancedOptions.frequency_penalty)
-                .setLimits(-2, 2, 0.1)
-                .onChange(async (value) => {
-                    this.plugin.settings.gptAdvancedOptions.frequency_penalty = value;
-                    fPenaltyValComponent.textContent = String(value);
-                    await this.plugin.saveSettings();
-                })
-            );
-        fPenaltyComponent.settingEl.appendChild(fPenaltyValComponent);
-
-        const pPenaltyValComponent = createEl('span', {
-			text: String(this.plugin.settings.gptAdvancedOptions.presence_penalty),
-			cls: 'slider-val',
-		});
-		const pPenaltyComponent = new Setting(containerEl)
-            .setName('Presence Penalty')
-            .setDesc('Positive values penalize new tokens based on whether they appear in the text so far. Higher values increase chance of \'creativity\'. Only sent when changed from the default; some models only accept the default. (Default = 0)')
-            .addSlider(sliderComponent => sliderComponent
-                .setValue(this.plugin.settings.gptAdvancedOptions.presence_penalty)
-                .setLimits(-2, 2, 0.1)
-                .onChange(async (value) => {
-                    this.plugin.settings.gptAdvancedOptions.presence_penalty = value;
-                    pPenaltyValComponent.textContent = String(value);
-                    await this.plugin.saveSettings();
-                })
-            );
-        pPenaltyComponent.settingEl.appendChild(pPenaltyValComponent);
-
-
-        const openAiTokenDescription = new DocumentFragment();
-        const openAiTokenDescHtml = document.createElement('p');
-        // use innerHTML for harcoded description
-        openAiTokenDescHtml.innerHTML = 'The maximum number of tokens the answer may use for each question. Reasoning models also need tokens to think; the plugin adds room for that on top. See <a href="https://platform.openai.com/tokenizer">tokens</a> to better understand how tokens are quantized. (Default = 100)';
-        openAiTokenDescription.appendChild(openAiTokenDescHtml);
-
-        new Setting(containerEl)
-            .setName('Maximum Tokens per Question')
-            .setDesc(openAiTokenDescription)
-            .addText(textComponent => textComponent
-                .setValue(String(this.plugin.settings.gptAdvancedOptions.max_tokens_per_question))
-                .onChange(async (value) => {
-					if (value == '') {
-						this.plugin.settings.gptAdvancedOptions.max_tokens_per_question = DEFAULT_SETTINGS.gptAdvancedOptions.max_tokens_per_question;
-						await this.plugin.saveSettings();
-					}
-					else if (!isNumeric(value)) {
-						new Notice('The value you entered is not a number value');
-					}
-					else {
-						this.plugin.settings.gptAdvancedOptions.max_tokens_per_question = Number(value);
-						await this.plugin.saveSettings();
-					}
-                })
-            );
 	}
 }

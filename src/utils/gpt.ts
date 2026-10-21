@@ -2,12 +2,10 @@ import OpenAI from 'openai';
 import type {
     ChatCompletion,
     ChatCompletionCreateParams,
-    ChatCompletionUserMessageParam,
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionSystemMessageParam,
+    ChatCompletionMessageParam,
 } from 'openai/resources';
-import logger from 'src/logger';
-import { GptAdvancedOptions } from 'src/settings';
+import logger from '../logger';
+import { GenerationOptions } from '../settings';
 
 export interface CardInformation {
     q: string;
@@ -76,19 +74,20 @@ function generateRepeatedSampleOutput(num: number) {
 }
 
 function createMessages(notes: string, num: number) {
-    const messages = [];
+    // Typed up front, so each push below is checked without a cast.
+    const messages: ChatCompletionMessageParam[] = [];
     messages.push({
         role: 'system',
         content: `You will be provided notes on a specific topic. The notes are formatted in markdown. Based on the given notes, make a list of ${num} questions and short answers that can be used for reviewing said notes by spaced repetition. Use the following guidelines:
         - output the questions and answers in the following JSON format { "questions_answers": [{ "q": "<generated question>", "a": "<generated answer>" }] }
         - ensure that the questions cover the entire portion of the given notes, do not come up with similar questions or repeat the same questions
-    `} as ChatCompletionSystemMessageParam)
+    `});
 
     // Insert sample user prompt
     messages.push({
         role: 'user',
         content: SAMPLE_NOTE,
-    } as ChatCompletionUserMessageParam);
+    });
     
 
     // Insert sample assistant output (JSON format)
@@ -97,39 +96,34 @@ function createMessages(notes: string, num: number) {
         content: JSON.stringify({
             "questions_answers": generateRepeatedSampleOutput(num)
         }),
-    } as ChatCompletionAssistantMessageParam);
+    });
 
     // Insert notes
     messages.push({
         role: 'user',
         content: `\n${notes.trim()}\n`,
-    } as ChatCompletionUserMessageParam);
+    });
 
     return messages;
 }
   
-// Reasoning models spend part of max_completion_tokens thinking before they write
-// anything. Without room for that, a reply can stop before the JSON starts.
-const REASONING_ALLOWANCE_TOKENS = 8000;
-
-// Sampling settings are only sent when moved off these defaults: many current
-// models (reasoning models in particular) refuse anything but the default.
-const SAMPLING_DEFAULTS = {
-    temperature: 1,
-    top_p: 1,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-} as const;
-
-function changedSamplingOptions(options: GptAdvancedOptions) {
-    const changed: Partial<Record<keyof typeof SAMPLING_DEFAULTS, number>> = {};
-    for (const key of Object.keys(SAMPLING_DEFAULTS) as Array<keyof typeof SAMPLING_DEFAULTS>) {
-        const value = options[key];
-        if (typeof value === 'number' && value !== SAMPLING_DEFAULTS[key]) {
-            changed[key] = value;
-        }
+// The model's reply is untrusted text: check it really is { questions_answers: [{ q, a }] }.
+// Returns null if the shape is wrong; entries that aren't a question/answer pair are dropped.
+function parseQuestionsAnswers(content: string): CardInformation[] | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(content);
     }
-    return changed;
+    catch {
+        return null;
+    }
+    if (parsed === null || typeof parsed !== 'object') return null;
+    const list = (parsed as { questions_answers?: unknown }).questions_answers;
+    if (!Array.isArray(list)) return null;
+    return list.filter((item): item is CardInformation =>
+        item !== null && typeof item === 'object' &&
+        typeof (item as { q?: unknown }).q === 'string' &&
+        typeof (item as { a?: unknown }).a === 'string');
 }
 
 function describeOpenAiError(err: unknown, model: string) {
@@ -139,6 +133,9 @@ function describeOpenAiError(err: unknown, model: string) {
         }
         if (err.status === 404) {
             return `OpenAI doesn't know the model "${model}" (404). Check the model name in the Auto Anki settings.\n${err.message}`;
+        }
+        if (err.status === 400 && /reasoning_effort/.test(err.message)) {
+            return `The model "${model}" doesn't accept the chosen reasoning effort. Set "Reasoning effort" to "Model default" in the Auto Anki settings, or pick another level.\n${err.message}`;
         }
         if (err.status === 429) {
             return `OpenAI rate limit or quota reached (429).\n${err.message}`;
@@ -155,21 +152,25 @@ export async function convertNotesToFlashcards(
     notes: string,
     num_q: number,
     num: number,
-    options: GptAdvancedOptions,
+    options: GenerationOptions,
 ) {
     let response: ChatCompletion;
     try {
         const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
 
         response = await client.chat.completions.create({
-            ...changedSamplingOptions(options),
             model,
             messages: createMessages(notes, num_q),
-            // max_tokens is deprecated, and reasoning models refuse it.
-            max_completion_tokens: options.max_tokens_per_question * num_q + REASONING_ALLOWANCE_TOKENS,
+            // max_tokens is deprecated, and reasoning models refuse it. This cap includes
+            // the tokens a reasoning model spends thinking, not just the visible answer.
+            max_completion_tokens: options.maxOutputTokens,
             n: num,
             stream: false,
             response_format: { type: "json_object" },
+            // Only sent when chosen: models without reasoning reject the parameter.
+            ...(options.reasoningEffort !== 'default' ? { reasoning_effort: options.reasoningEffort } : {}),
+            // Temperature, top_p and the penalties are deliberately never sent: current
+            // OpenAI models only accept their defaults.
         } as ChatCompletionCreateParams) as ChatCompletion;
     }
     catch (err) {
@@ -190,7 +191,7 @@ export async function convertNotesToFlashcards(
         if (set.finish_reason === 'length') {
             logger.log({
                 level: 'error',
-                message: `The model ran out of tokens before finishing (choice ${idx + 1}). Raise "Maximum Tokens per Question" in the Auto Anki settings, or ask for fewer questions.`,
+                message: `The model ran out of tokens before finishing (choice ${idx + 1}). Raise "Maximum output tokens" or lower "Reasoning effort" in the Auto Anki settings, or ask for fewer questions.`,
             });
             return [];
         }
@@ -199,15 +200,8 @@ export async function convertNotesToFlashcards(
             level: 'info',
             message: content,
         });
-        let parsedContent;
-        try {
-            parsedContent = JSON.parse(content);
-        }
-        catch (err) {
-            parsedContent = undefined;
-        }
-        const questions = parsedContent?.["questions_answers"];
-        if (!Array.isArray(questions)) {
+        const questions = parseQuestionsAnswers(content);
+        if (questions == null) {
             logger.log({
                 level: 'error',
                 message: `The model's reply wasn't in the expected format (choice ${idx + 1}), so no cards were made. Try again, or try a different model.`,
@@ -218,7 +212,7 @@ export async function convertNotesToFlashcards(
             level: 'info',
             message: `Choice ${idx}: generated ${questions.length} questions and answers`,
         });
-        card_choices.push(questions as CardInformation[]);
+        card_choices.push(questions);
     }
     return card_choices;
 }

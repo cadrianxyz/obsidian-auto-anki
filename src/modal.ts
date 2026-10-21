@@ -1,5 +1,5 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
-import { GptAdvancedOptions } from './settings';
+import { GenerationOptions } from './settings';
 
 import { 
     checkAnkiAvailability,
@@ -27,29 +27,29 @@ export class ExportModal extends Modal {
     model: string;
     port: number;
     deck: string;
-    gptAdvancedOptions: GptAdvancedOptions;
+    generationOptions: GenerationOptions;
     statusBar: StatusBarElement;
     
     constructor(
         app: App,
         statusBar: StatusBarElement,
         data: string,
-        openAiApiKey: string,
+        apiKey: string,
         openAiModel: string,
         ankiConnectPort: number,
         ankiDestinationDeck: string,
-        gptAdvancedOptions: GptAdvancedOptions,
+        generationOptions: GenerationOptions,
         dafaultNumQuestions?: number,
         defaultNumAlternatives?: number,
     ) {
         super(app);
         this.statusBar = statusBar;
         this.data = data;
-        this.apiKey = openAiApiKey;
+        this.apiKey = apiKey;
         this.model = openAiModel;
         this.port = ankiConnectPort;
         this.deck = ankiDestinationDeck;
-        this.gptAdvancedOptions = gptAdvancedOptions;
+        this.generationOptions = generationOptions;
 
         this.n_q = dafaultNumQuestions ?? 5;
         this.n_q_valid = checkValidNumGreaterThanZero(this.n_q);
@@ -74,7 +74,7 @@ export class ExportModal extends Modal {
         contentEl.createEl('h1', { text: 'How many questions should be generated?' });
 
         new Setting(contentEl)
-            .setName('Number of Questions')
+            .setName('Number of questions')
             .addText((text) => text
                 .setValue(String(this.n_q))
                 .onChange((value) => {
@@ -84,7 +84,7 @@ export class ExportModal extends Modal {
             );
 
         new Setting(contentEl)
-            .setName('Number of Alternatives')
+            .setName('Number of alternatives')
             .setDesc('Generate multiple versions of questions and choose your favorite ones!')
             .addText((text) => text
                 .setValue(String(this.n_alt))
@@ -97,7 +97,7 @@ export class ExportModal extends Modal {
         new Setting(contentEl)
             .addButton((btn) =>
                 btn
-                .setButtonText('Generate Cards')
+                .setButtonText('Generate cards')
                 .setCta()
                 .onClick(async () => {
                     if (!this.n_q_valid || !this.n_alt_valid) {
@@ -117,7 +117,7 @@ export class ExportModal extends Modal {
                         this.data,
                         this.n_q,
                         this.n_alt+1,
-                        this.gptAdvancedOptions,
+                        this.generationOptions,
                     );
                     if (this.statusBar.doReset) this.statusBar.doReset();
 
@@ -162,10 +162,10 @@ class QuestionSetWithSelections {
     renderHtmlList() {
         const htmlList = createEl('ul', { cls: 'question-options-container' });
 
-        const convenienceButtons = createEl('div', { cls: 'question-options__buttons' });
-        const selectAllButton = convenienceButtons.createEl('button', { text: 'Select All' });
+        const convenienceButtons = createDiv({ cls: 'question-options__buttons' });
+        const selectAllButton = convenienceButtons.createEl('button', { text: 'Select all' });
         selectAllButton.onclick = (e: MouseEvent) => { this.selectAll() };
-        const deselectAllButton = convenienceButtons.createEl('button', { text: 'Deselect All' });
+        const deselectAllButton = convenienceButtons.createEl('button', { text: 'Deselect all' });
         deselectAllButton.onclick = (e: MouseEvent) => { this.deselectAll() };
 
         htmlList.appendChild(convenienceButtons);
@@ -233,7 +233,6 @@ export class ChoiceModal extends Modal {
         has_alternatives: boolean,
     ) {
         super(app);
-        this.renderContent  = this.renderContent.bind(this);
 
         this.card_sets = card_sets;
         this.port = port;
@@ -252,28 +251,28 @@ export class ChoiceModal extends Modal {
                     if (i < set.length) question_choices.push(set[i]);
                 })
                 this.question_sets.push(
-                    new QuestionSetWithSelections(question_choices, this.renderContent)
+                    new QuestionSetWithSelections(question_choices, () => this.renderContent())
                 );
             }
         }
         else {
             this.n_sets = 1;
             this.question_sets.push(
-                new QuestionSetWithSelections(card_sets[0], this.renderContent)
+                new QuestionSetWithSelections(card_sets[0], () => this.renderContent())
             );
         }
     }
 
     renderContent() {
         const { contentEl } = this;
-        contentEl.innerHTML = ''; // use innerHTML to reset content
+        contentEl.empty();
 
         // modal title, description
         if (this.n_sets === 1) {
-            contentEl.createEl('h1', { text: 'Questions List' });
+            contentEl.createEl('h1', { text: 'Questions' });
         }
         else {
-            contentEl.createEl('h1', { text: `Question Set No. ${this.curr_set+1}` });
+            contentEl.createEl('h1', { text: `Question set ${this.curr_set+1}` });
         }
         contentEl.createEl('p', { text: 'Pick one or more of the questions below you want to export to Anki.' });
 
@@ -284,7 +283,7 @@ export class ChoiceModal extends Modal {
         // create buttons depending on how many sets there are
         if (this.n_sets > 1) {
             // create buttons in modal footer
-            const htmlButtons = createEl('div', { cls: 'modal-buttons' });
+            const htmlButtons = createDiv({ cls: 'modal-buttons' });
             // previous button
             new Setting(htmlButtons)
                 .addButton((btn) =>
@@ -316,7 +315,7 @@ export class ChoiceModal extends Modal {
                 new Setting(htmlButtons)
                     .addButton((btn) =>
                         btn
-                        .setButtonText('Confirm Selection')
+                        .setButtonText('Confirm selection')
                         .setCta()
                         .onClick(async () => {
                             this.close();
@@ -339,7 +338,7 @@ export class ChoiceModal extends Modal {
             new Setting(contentEl)
                 .addButton((btn) =>
                     btn
-                    .setButtonText('Confirm Selection')
+                    .setButtonText('Confirm selection')
                     .setCta()
                     .onClick(async () => {
                         this.close();
@@ -372,10 +371,9 @@ export class ChoiceModal extends Modal {
 export class AnkiDeckModal extends Modal {
     port: number;
     cardsToExport: CardInformation[];
-    decks: string[];
+    decks: string[] = [];
     selectedDeck: string;
     isDataFetched: boolean;
-    isDataError: boolean;
 
     constructor(
         app: App,
@@ -384,7 +382,6 @@ export class AnkiDeckModal extends Modal {
         allSelectedCards: CardInformation[],
     ) {
         super(app);
-        this.renderContent  = this.renderContent.bind(this);
         this.port = port;
         this.selectedDeck = defaultDeck;
         this.cardsToExport = allSelectedCards;
@@ -405,7 +402,7 @@ export class AnkiDeckModal extends Modal {
 
     renderHtmlList() {
         const htmlList = createEl('ul', { cls: 'deck-options-container' });
-        const convenienceButtons = createEl('div', { cls: 'deck-options__buttons' });
+        const convenienceButtons = createDiv({ cls: 'deck-options__buttons' });
 
         htmlList.appendChild(convenienceButtons);
 
@@ -430,20 +427,20 @@ export class AnkiDeckModal extends Modal {
 
     renderContent() {
         const { contentEl } = this;
-        contentEl.innerHTML = ''; // use innerHTML to reset content
+        contentEl.empty();
 
         // modal title
-        contentEl.createEl('h1', { text: 'Anki Decks' });
+        contentEl.createEl('h1', { text: 'Anki decks' });
 
         if (!this.isDataFetched) {
-            const centerContainer = contentEl.createEl('div', { cls: 'error-notice' });
-            centerContainer.createEl('h4', { text: 'loading data...' });
+            const centerContainer = contentEl.createDiv({ cls: 'error-notice' });
+            centerContainer.createEl('h4', { text: 'Loading data…' });
             return;
         }
         
         if (this.decks.length === 0) {
-            const centerContainer = contentEl.createEl('div', { cls: 'error-notice' });
-            centerContainer.createEl('h4', { text: 'Either an error occured or no Anki decks were found' });
+            const centerContainer = contentEl.createDiv({ cls: 'error-notice' });
+            centerContainer.createEl('h4', { text: 'Either an error occurred or no Anki decks were found' });
             const refreshButton = centerContainer.createEl('button', { text: 'Refresh' });
             refreshButton.onclick = async () => {
                 this.renderContent();
@@ -463,14 +460,14 @@ export class AnkiDeckModal extends Modal {
         new Setting(contentEl)
             .addButton((btn) =>
                 btn
-                .setButtonText('Confirm and Export')
+                .setButtonText('Confirm and export')
                 .setDisabled(this.selectedDeck === '')
                 .setCta()
                 .onClick(async () => {
                     if (this.selectedDeck === '') return;
                 
                     this.close();
-                    exportToAnki(
+                    await exportToAnki(
                         this.cardsToExport,
                         this.port,
                         this.selectedDeck,

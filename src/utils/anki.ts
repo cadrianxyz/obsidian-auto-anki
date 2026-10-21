@@ -20,15 +20,26 @@ export async function checkAnkiAvailability(ankiPort: number) {
         });
         return true;
     }
-    catch (err) {
-        new Notice(`ERR: Could not connect to Anki! Please ensure you have Anki Connect running on port ${ankiPort}.`);
+    catch {
+        new Notice(`ERR: Could not connect to Anki! Please ensure you have AnkiConnect running on port ${ankiPort}.`);
         return false;
     }
 }
 
-interface AnkiActionResult<T> {
-    result: T | null;
-    error: string | null;
+// Every AnkiConnect reply has this shape. It arrives as untyped JSON, so it's checked
+// before use rather than trusted.
+interface AnkiConnectReply {
+    result?: unknown;
+    error?: unknown;
+}
+
+function readReply(json: unknown): AnkiConnectReply {
+    return json !== null && typeof json === 'object' ? json : {};
+}
+
+// AnkiConnect's errors are normally strings, but they arrive untyped.
+function describeError(error: unknown): string {
+    return typeof error === 'string' ? error : JSON.stringify(error);
 }
 
 interface AddCardsOutcome {
@@ -72,21 +83,24 @@ async function addCardsToAnki(ankiPort: number, deck: string, data: CardInformat
             throw: true,
         });
     }
-    catch (err) {
-        new Notice(`ERR: Could not connect to Anki! Please ensure you have Anki Connect running on port ${ankiPort}.`);
+    catch {
+        new Notice(`ERR: Could not connect to Anki! Please ensure you have AnkiConnect running on port ${ankiPort}.`);
         return null;
     }
 
-    if (res.json?.error) {
-        new Notice(`ERR: Anki refused the export: ${res.json.error}`);
+    const reply = readReply(res.json);
+    if (reply.error) {
+        new Notice(`ERR: Anki refused the export: ${describeError(reply.error)}`);
         return null;
     }
-    const results: Array<AnkiActionResult<number> | number | null> = res.json?.result ?? [];
+    const results: unknown[] = Array.isArray(reply.result) ? reply.result : [];
     const outcome: AddCardsOutcome = { added: 0, errors: [] };
     results.forEach((r) => {
-        if (typeof r === 'number') outcome.added += 1;
-        else if (r?.error) outcome.errors.push(r.error);
-        else if (r?.result != null) outcome.added += 1;
+        // A bare note ID means success (the old reply format); otherwise it's { result, error }.
+        if (typeof r === 'number') { outcome.added += 1; return; }
+        const item = readReply(r);
+        if (item.error) outcome.errors.push(describeError(item.error));
+        else if (item.result != null) outcome.added += 1;
         else outcome.errors.push('unknown error');
     });
     return outcome;
@@ -106,17 +120,20 @@ export async function getAnkiDecks(ankiPort: number) {
             throw: true,
         });
     }
-    catch (err) {
-        new Notice(`ERR: Could not connect to Anki! Please ensure you have Anki Connect running on port ${ankiPort}.`);
+    catch {
+        new Notice(`ERR: Could not connect to Anki! Please ensure you have AnkiConnect running on port ${ankiPort}.`);
         return [];
     }
-    return res.json.result as string[];
+    const reply = readReply(res.json);
+    return Array.isArray(reply.result)
+        ? reply.result.filter((deck): deck is string => typeof deck === 'string')
+        : [];
 }
 
 export async function checkAnkiDecksExist(ankiPort: number) {
     const decks = await getAnkiDecks(ankiPort);
     if (decks.length == 0) {
-        new Notice('Your anki account has no decks. Create a new one before using!')
+        new Notice('Your Anki collection has no decks. Create one in Anki first.')
         return false;
     }
 
