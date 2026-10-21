@@ -1,9 +1,9 @@
 import esbuild from "esbuild";
-import process from "process";
-import builtins from "builtin-modules";
-import { copyFileSync, mkdirSync } from "fs";
-import { homedir } from "os";
-import { join, resolve } from "path";
+import process from "node:process";
+import { builtinModules } from "node:module";
+import { copyFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
 const banner =
 `/*
@@ -59,7 +59,9 @@ const context = await esbuild.context({
 		"@lezer/common",
 		"@lezer/highlight",
 		"@lezer/lr",
-		...builtins],
+		// Node's own modules (fs, path, …) are provided by Obsidian's desktop app at
+		// runtime, so they're left out of the bundle.
+		...builtinModules],
 	format: "cjs",
 	target: "es2018",
 	logLevel: "info",
