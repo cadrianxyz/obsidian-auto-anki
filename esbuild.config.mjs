@@ -63,7 +63,7 @@ const context = await esbuild.context({
 		// runtime, so they're left out of the bundle.
 		...builtinModules],
 	format: "cjs",
-	target: "es2018",
+	target: "es2021",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
