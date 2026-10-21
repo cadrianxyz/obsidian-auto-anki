@@ -1,5 +1,5 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
-import { GptAdvancedOptions } from './settings';
+import { GenerationOptions } from './settings';
 
 import { 
     checkAnkiAvailability,
@@ -27,29 +27,29 @@ export class ExportModal extends Modal {
     model: string;
     port: number;
     deck: string;
-    gptAdvancedOptions: GptAdvancedOptions;
+    generationOptions: GenerationOptions;
     statusBar: StatusBarElement;
     
     constructor(
         app: App,
         statusBar: StatusBarElement,
         data: string,
-        openAiApiKey: string,
+        apiKey: string,
         openAiModel: string,
         ankiConnectPort: number,
         ankiDestinationDeck: string,
-        gptAdvancedOptions: GptAdvancedOptions,
+        generationOptions: GenerationOptions,
         dafaultNumQuestions?: number,
         defaultNumAlternatives?: number,
     ) {
         super(app);
         this.statusBar = statusBar;
         this.data = data;
-        this.apiKey = openAiApiKey;
+        this.apiKey = apiKey;
         this.model = openAiModel;
         this.port = ankiConnectPort;
         this.deck = ankiDestinationDeck;
-        this.gptAdvancedOptions = gptAdvancedOptions;
+        this.generationOptions = generationOptions;
 
         this.n_q = dafaultNumQuestions ?? 5;
         this.n_q_valid = checkValidNumGreaterThanZero(this.n_q);
@@ -117,7 +117,7 @@ export class ExportModal extends Modal {
                         this.data,
                         this.n_q,
                         this.n_alt+1,
-                        this.gptAdvancedOptions,
+                        this.generationOptions,
                     );
                     if (this.statusBar.doReset) this.statusBar.doReset();
 
@@ -372,10 +372,9 @@ export class ChoiceModal extends Modal {
 export class AnkiDeckModal extends Modal {
     port: number;
     cardsToExport: CardInformation[];
-    decks: string[];
+    decks: string[] = [];
     selectedDeck: string;
     isDataFetched: boolean;
-    isDataError: boolean;
 
     constructor(
         app: App,
