@@ -83,12 +83,6 @@ If your plugin does not need CSS, delete this file.
     margin: 0;
 }
 
-.slider-val {
-    margin-left: 0.5rem;
-    width: 3.5rem;
-    text-align: end;
-}
-
 .question-options-container,
 .deck-options-container {
     list-style-type: none;

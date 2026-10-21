@@ -7,7 +7,7 @@ import type {
     ChatCompletionSystemMessageParam,
 } from 'openai/resources';
 import logger from '../logger';
-import { GptAdvancedOptions } from '../settings';
+import { GenerationOptions } from '../settings';
 
 export interface CardInformation {
     q: string;
@@ -108,30 +108,6 @@ function createMessages(notes: string, num: number) {
     return messages;
 }
   
-// Reasoning models spend part of max_completion_tokens thinking before they write
-// anything. Without room for that, a reply can stop before the JSON starts.
-const REASONING_ALLOWANCE_TOKENS = 8000;
-
-// Sampling settings are only sent when moved off these defaults: many current
-// models (reasoning models in particular) refuse anything but the default.
-const SAMPLING_DEFAULTS = {
-    temperature: 1,
-    top_p: 1,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-} as const;
-
-function changedSamplingOptions(options: GptAdvancedOptions) {
-    const changed: Partial<Record<keyof typeof SAMPLING_DEFAULTS, number>> = {};
-    for (const key of Object.keys(SAMPLING_DEFAULTS) as Array<keyof typeof SAMPLING_DEFAULTS>) {
-        const value = options[key];
-        if (typeof value === 'number' && value !== SAMPLING_DEFAULTS[key]) {
-            changed[key] = value;
-        }
-    }
-    return changed;
-}
-
 function describeOpenAiError(err: unknown, model: string) {
     if (err instanceof OpenAI.APIError && err.status !== undefined) {
         if (err.status === 401) {
@@ -139,6 +115,9 @@ function describeOpenAiError(err: unknown, model: string) {
         }
         if (err.status === 404) {
             return `OpenAI doesn't know the model "${model}" (404). Check the model name in the Auto Anki settings.\n${err.message}`;
+        }
+        if (err.status === 400 && /reasoning_effort/.test(err.message)) {
+            return `The model "${model}" doesn't accept the chosen Reasoning Effort. Set Reasoning Effort to "Model default" in the Auto Anki settings, or pick another level.\n${err.message}`;
         }
         if (err.status === 429) {
             return `OpenAI rate limit or quota reached (429).\n${err.message}`;
@@ -155,21 +134,25 @@ export async function convertNotesToFlashcards(
     notes: string,
     num_q: number,
     num: number,
-    options: GptAdvancedOptions,
+    options: GenerationOptions,
 ) {
     let response: ChatCompletion;
     try {
         const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
 
         response = await client.chat.completions.create({
-            ...changedSamplingOptions(options),
             model,
             messages: createMessages(notes, num_q),
-            // max_tokens is deprecated, and reasoning models refuse it.
-            max_completion_tokens: options.max_tokens_per_question * num_q + REASONING_ALLOWANCE_TOKENS,
+            // max_tokens is deprecated, and reasoning models refuse it. This cap includes
+            // the tokens a reasoning model spends thinking, not just the visible answer.
+            max_completion_tokens: options.maxOutputTokens,
             n: num,
             stream: false,
             response_format: { type: "json_object" },
+            // Only sent when chosen: models without reasoning reject the parameter.
+            ...(options.reasoningEffort !== 'default' ? { reasoning_effort: options.reasoningEffort } : {}),
+            // Temperature, top_p and the penalties are deliberately never sent: current
+            // OpenAI models only accept their defaults.
         } as ChatCompletionCreateParams) as ChatCompletion;
     }
     catch (err) {
@@ -190,7 +173,7 @@ export async function convertNotesToFlashcards(
         if (set.finish_reason === 'length') {
             logger.log({
                 level: 'error',
-                message: `The model ran out of tokens before finishing (choice ${idx + 1}). Raise "Maximum Tokens per Question" in the Auto Anki settings, or ask for fewer questions.`,
+                message: `The model ran out of tokens before finishing (choice ${idx + 1}). Raise "Maximum Output Tokens" or lower "Reasoning Effort" in the Auto Anki settings, or ask for fewer questions.`,
             });
             return [];
         }
