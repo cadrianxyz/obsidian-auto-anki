@@ -18,13 +18,35 @@ export function isKeychainAvailable(app: App) {
 	return secretStorage(app) !== null;
 }
 
-export function getOpenAiApiKey(app: App): string | null {
+// Obsidian doesn't say whether the Keychain can throw (for example when the system's secret
+// store is locked). These two may; the exported functions below catch it, because a Keychain
+// error must never stop the plugin from loading or a command from running.
+function readKey(app: App): string | null {
 	const value = secretStorage(app)?.getSecret(OPENAI_API_KEY_SECRET_ID);
 	return value && value.trim() ? value.trim() : null;
 }
 
-export function setOpenAiApiKey(app: App, value: string) {
+function writeKey(app: App, value: string) {
 	secretStorage(app)?.setSecret(OPENAI_API_KEY_SECRET_ID, value.trim());
+}
+
+export function getOpenAiApiKey(app: App): string | null {
+	try {
+		return readKey(app);
+	}
+	catch (err) {
+		console.error('Auto Anki: could not read the OpenAI API key from the Keychain', err);
+		return null;
+	}
+}
+
+export function setOpenAiApiKey(app: App, value: string) {
+	try {
+		writeKey(app, value);
+	}
+	catch (err) {
+		console.error('Auto Anki: could not save the OpenAI API key in the Keychain', err);
+	}
 }
 
 export function maskApiKey(key: string) {
@@ -43,7 +65,7 @@ export type KeyMigrationResult =
 	| 'moved'          // key moved into the Keychain and removed from data.json
 	| 'kept-keychain'  // the Keychain already held a different key on this device; that one is kept
 	| 'unavailable'    // no Keychain (Obsidian older than 1.11.4); data.json left untouched
-	| 'failed';        // the Keychain didn't hold the key after writing; data.json left untouched
+	| 'failed';        // the Keychain threw, or didn't hold the key after writing; data.json left untouched
 
 // Mutates `data`: removes the legacy fields, but only once the key is confirmed in the Keychain.
 export function migrateLegacyApiKey(app: App, data: LegacyKeyFields): KeyMigrationResult {
@@ -61,14 +83,22 @@ export function migrateLegacyApiKey(app: App, data: LegacyKeyFields): KeyMigrati
 		return 'cleaned';
 	}
 
-	const existing = getOpenAiApiKey(app);
-	if (existing) {
-		removeLegacyFields();
-		return existing === legacyKey ? 'moved' : 'kept-keychain';
-	}
+	// Uses the functions that throw, so that a Keychain that can't be read is never mistaken
+	// for an empty one (which would overwrite a key it may hold).
+	try {
+		const existing = readKey(app);
+		if (existing) {
+			removeLegacyFields();
+			return existing === legacyKey ? 'moved' : 'kept-keychain';
+		}
 
-	setOpenAiApiKey(app, legacyKey);
-	if (getOpenAiApiKey(app) !== legacyKey) return 'failed';
+		writeKey(app, legacyKey);
+		if (readKey(app) !== legacyKey) return 'failed';
+	}
+	catch (err) {
+		console.error('Auto Anki: could not move the OpenAI API key into the Keychain', err);
+		return 'failed';
+	}
 	removeLegacyFields();
 	return 'moved';
 }
