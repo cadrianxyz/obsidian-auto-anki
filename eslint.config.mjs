@@ -10,6 +10,8 @@ export default defineConfig(
 		"node_modules",
 		"main.js",
 		"sample",
+		// The tests run in Node against a stand-in for Obsidian, so Obsidian's plugin rules don't apply.
+		"test",
 		"esbuild.config.mjs",
 		"version-bump.mjs",
 		"versions.json",

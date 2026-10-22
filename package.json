@@ -8,7 +8,8 @@
 		"build": "tsc --noEmit && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"release": "git push origin --tags",
-		"lint": "eslint ."
+		"lint": "eslint .",
+		"test": "node test/run.mjs"
 	},
 	"keywords": [],
 	"author": "",
