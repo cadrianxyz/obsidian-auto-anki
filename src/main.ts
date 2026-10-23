@@ -31,6 +31,7 @@ import {
 } from './utils/api-key';
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
 import { isNumeric } from './utils/validations';
+import { asRecord } from './utils/data';
 import { StatusBarElement } from './utils/cusom-types';
 
 // What data.json may contain: current settings, plus fields older versions kept there.
@@ -148,7 +149,7 @@ export default class AutoAnkiPlugin extends Plugin {
 		// data.json can hold anything (an older version's settings, or nothing on a fresh
 		// install), so it's read as unknown and narrowed, rather than trusted as PluginSettings.
 		const stored: unknown = await this.loadData();
-		const data = (stored !== null && typeof stored === 'object' ? stored : {}) as StoredSettings;
+		const data = asRecord(stored) as StoredSettings;
 		const migration = migrateLegacyApiKey(this.app, data);
 		const generationMigration = migrateLegacyGenerationOptions(data);
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);

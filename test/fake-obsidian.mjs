@@ -10,11 +10,15 @@ export const fake = {
 	modals: [],
 	ankiRequests: [],
 	ankiHandler: null,
+	providerRequests: [],
+	providerHandler: null,
 	reset() {
 		this.notices.length = 0;
 		this.modals.length = 0;
 		this.ankiRequests.length = 0;
 		this.ankiHandler = null;
+		this.providerRequests.length = 0;
+		this.providerHandler = null;
 	},
 };
 
@@ -67,6 +71,8 @@ function applyOpts(el, opts) {
 	if (opts.href) el.attrs.href = opts.href;
 }
 
+// Obsidian exposes window timers in its desktop renderer; Node supplies the test timers.
+globalThis.window = { setTimeout, clearTimeout };
 globalThis.createEl = (tag, opts) => new FakeElement(tag, opts);
 globalThis.createDiv = (opts) => new FakeElement('div', opts);
 globalThis.createSpan = (opts) => new FakeElement('span', opts);
@@ -215,13 +221,20 @@ export class App {}
 
 export function setIcon(el, icon) { el.icon = icon; }
 
-// ---- requestUrl, used for AnkiConnect ----
+export function normalizePath(path) {
+	return path.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/|\/$/g, '');
+}
+
+// ---- requestUrl: route hosted AI/catalogue requests separately from AnkiConnect ----
 
 export async function requestUrl(req) {
 	const body = req.body ? JSON.parse(req.body) : undefined;
-	fake.ankiRequests.push({ url: req.url, body });
-	if (!fake.ankiHandler) throw new Error('net::ERR_CONNECTION_REFUSED');
-	const reply = await fake.ankiHandler(body, req);
+	const provider = /^https:\/\/(?:api\.openai\.com|api\.anthropic\.com|models\.dev)(?:\/|$)/.test(req.url);
+	const requests = provider ? fake.providerRequests : fake.ankiRequests;
+	requests.push({ url: req.url, body, headers: req.headers, method: req.method });
+	const handler = provider ? fake.providerHandler : fake.ankiHandler;
+	if (!handler) throw new Error('net::ERR_CONNECTION_REFUSED');
+	const reply = await handler(body, req);
 	const status = reply?.status ?? 200;
 	if (req.throw !== false && status >= 400) throw new Error(`Request failed, status ${status}`);
 	return { status, json: reply?.json, text: JSON.stringify(reply?.json) };

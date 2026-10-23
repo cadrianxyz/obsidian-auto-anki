@@ -1,4 +1,5 @@
 import { ANKI_CONNECT_DEFAULT_PORT } from './utils/anki';
+import { LEGACY_DEFAULT_MAX_OUTPUT_TOKENS, LEGACY_DEFAULT_OPENAI_MODEL } from './settings/legacy-defaults';
 
 // OpenAI's reasoning_effort levels offered in settings. Which levels a model accepts varies
 // by model, and models without reasoning reject the parameter altogether, so 'default'
@@ -34,7 +35,7 @@ export interface PluginSettings {
 
 // 0.2.1 hard-coded 'gpt-3.5-turbo-1106', which OpenAI shut down on 2026-09-28.
 // The model is now a setting; this is only the value a new install starts with.
-export const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
+export const DEFAULT_OPENAI_MODEL = LEGACY_DEFAULT_OPENAI_MODEL;
 
 export const DEFAULT_SETTINGS: PluginSettings = {
 	ankiConnectPort: ANKI_CONNECT_DEFAULT_PORT,
@@ -42,7 +43,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	openAiModel: DEFAULT_OPENAI_MODEL,
 	generation: {
 		reasoningEffort: 'default',
-		maxOutputTokens: 16000,
+		maxOutputTokens: LEGACY_DEFAULT_MAX_OUTPUT_TOKENS,
 	},
 	questionGenerationDefaults: {
 		textSelection: {

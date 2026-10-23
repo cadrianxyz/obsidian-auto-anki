@@ -20,6 +20,7 @@ test/.build
 
 # obsidian
 data.json
+model-catalog-cache.json
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
