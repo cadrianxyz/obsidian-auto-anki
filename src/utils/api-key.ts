@@ -1,4 +1,5 @@
 import { App } from 'obsidian';
+import { providerSecretName, type ProviderId } from '../ai/presets';
 
 // The OpenAI API key lives in Obsidian's Keychain (app.secretStorage, Obsidian 1.11.4+),
 // not in data.json. data.json sits inside the vault, so anything that copies the vault
@@ -31,21 +32,38 @@ function writeKey(app: App, value: string) {
 }
 
 export function getOpenAiApiKey(app: App): string | null {
+	return getProviderApiKey(app, 'openai');
+}
+
+/** Read this device's key when needed; availability is never taken from synced settings. */
+export function getProviderApiKey(app: App, providerId: ProviderId): string | null {
 	try {
-		return readKey(app);
+		const value = secretStorage(app)?.getSecret(providerSecretName(providerId));
+		return value && value.trim() ? value.trim() : null;
 	}
 	catch (err) {
-		console.error('Auto Anki: could not read the OpenAI API key from the Keychain', err);
+		console.error('Auto Anki: could not read the provider API key from the Keychain', err);
 		return null;
 	}
 }
 
 export function setOpenAiApiKey(app: App, value: string) {
+	return setProviderApiKey(app, 'openai', value);
+}
+
+/** Report success only after a read verifies the write. Empty input never deletes a key. */
+export function setProviderApiKey(app: App, providerId: ProviderId, value: string): boolean {
 	try {
-		writeKey(app, value);
+		const storage = secretStorage(app);
+		const key = value.trim();
+		if (!storage || !key) return false;
+		const name = providerSecretName(providerId);
+		storage.setSecret(name, key);
+		return storage.getSecret(name)?.trim() === key;
 	}
 	catch (err) {
-		console.error('Auto Anki: could not save the OpenAI API key in the Keychain', err);
+		console.error('Auto Anki: could not save the provider API key in the Keychain', err);
+		return false;
 	}
 }
 

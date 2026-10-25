@@ -25,7 +25,7 @@ export class ExportModal extends Modal {
     data: string;
     apiKey: string;
     model: string;
-    port: number;
+    port: number | string;
     deck: string;
     generationOptions: GenerationOptions;
     statusBar: StatusBarElement;
@@ -36,7 +36,7 @@ export class ExportModal extends Modal {
         data: string,
         apiKey: string,
         openAiModel: string,
-        ankiConnectPort: number,
+        ankiConnectPort: number | string,
         ankiDestinationDeck: string,
         generationOptions: GenerationOptions,
         dafaultNumQuestions?: number,
@@ -219,7 +219,7 @@ export class ChoiceModal extends Modal {
     card_sets: Array<CardInformation[]>;
     question_sets: QuestionSetWithSelections[];
     n_sets: number;
-    port: number;
+    port: number | string;
     deck: string;
 
     curr_set: number;
@@ -227,7 +227,7 @@ export class ChoiceModal extends Modal {
     constructor(
         app: App,
         card_sets: Array<CardInformation[]>,
-        port: number,
+        port: number | string,
         deck: string,
         n_q: number,
         has_alternatives: boolean,
@@ -369,7 +369,7 @@ export class ChoiceModal extends Modal {
 }
 
 export class AnkiDeckModal extends Modal {
-    port: number;
+    port: number | string;
     cardsToExport: CardInformation[];
     decks: string[] = [];
     selectedDeck: string;
@@ -377,7 +377,7 @@ export class AnkiDeckModal extends Modal {
 
     constructor(
         app: App,
-        port: number,
+        port: number | string,
         defaultDeck: string,
         allSelectedCards: CardInformation[],
     ) {
@@ -395,7 +395,9 @@ export class AnkiDeckModal extends Modal {
         this.isDataFetched = true;
 
 
-        if (this.selectedDeck === '' && fetchedDecks.length > 0) {
+        // This legacy picker exports only to existing decks. A 1.0 deck template
+        // is resolved by the upcoming Anki flow, so never send it literally here.
+        if (!fetchedDecks.includes(this.selectedDeck) && fetchedDecks.length > 0) {
             this.selectedDeck = fetchedDecks[0];
         }
     }

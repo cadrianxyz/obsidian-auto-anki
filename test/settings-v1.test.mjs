@@ -136,6 +136,22 @@ describe('1.0 settings defaults and validation', () => {
 		assert.equal(normalizeSettings({ defaultModel: { providerId: 'openai', modelId: 'missing' } }).defaultModel, null);
 	});
 
+	test('saved models without a visibility setting stay enabled, while explicit hidden models retain their settings', () => {
+		const settings = createDefaultSettings();
+		settings.providers.openai.models = [
+			{ id: 'previously-saved', maxOutputTokens: 8000 },
+			{ ...createModelSettings('hidden'), enabled: false, maxOutputTokens: 6000 },
+		];
+		settings.defaultModel = { providerId: 'openai', modelId: 'hidden' };
+		const result = normalizeSettings(settings);
+		assert.equal(result.providers.openai.models[0].enabled, true);
+		assert.equal(result.providers.openai.models[0].maxOutputTokens, 8000);
+		assert.equal(result.providers.openai.models[1].enabled, false);
+		assert.equal(result.providers.openai.models[1].maxOutputTokens, 6000);
+		assert.equal(result.defaultModel, null, 'a hidden model cannot remain the default');
+		assert.deepEqual(normalizeSettings(result), result);
+	});
+
 	test('malformed JSON objects in capability fields cannot throw during validation', () => {
 		const saved = createDefaultSettings();
 		saved.providers.openai.models.push({ id: 'bad-shape', capabilities: { outputMode: { toString: 123 }, acceptsImages: true } });

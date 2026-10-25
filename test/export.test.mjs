@@ -6,7 +6,7 @@ import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { fake, buttonsIn, settingsIn } from 'obsidian';
 import {
-	SECRET_ID, makeDisk, makeKeychain, makeDevice, loadPlugin, openSettings, run, isOffered,
+	SECRET_ID, makeDisk, makeKeychain, makeDevice, loadPlugin, openProviderSettings as openSettings, run, isOffered,
 	openai, completion, openAiError, ankiServer, ankiActionsSent, resetAll,
 } from './helpers.mjs';
 
@@ -22,7 +22,7 @@ const SELECTION = 'export-text-selection-to-anki';
 beforeEach(resetAll);
 
 async function device({ settings, keychain = makeKeychain('ok', { [SECRET_ID]: KEY }), activeNote } = {}) {
-	return loadPlugin(makeDevice({ disk: makeDisk(settings), keychain, activeNote }));
+	return loadPlugin(makeDevice({ disk: makeDisk(settings ?? { openAiModel: 'gpt-6-luna' }), keychain, activeNote }));
 }
 
 function button(modal, text) {
@@ -122,6 +122,7 @@ describe('commands', () => {
 		const tab = openSettings(plugin);
 		const box = tab.containerEl.all().find((e) => e.setting?.name === 'OpenAI API key').setting.components[0];
 		await box.type(KEY);
+		await tab.containerEl.all().find(e => e.setting?.name === 'OpenAI API key').setting.components[1].click();
 		ankiServer();
 		openai.handler = () => completion(CARDS);
 		await exportAll(plugin);
@@ -158,9 +159,9 @@ describe('exporting', () => {
 		const req = openai.requests[0];
 		assert.match(req.url, /\/chat\/completions$/);
 		assert.equal(req.headers.get('authorization'), `Bearer ${KEY}`);
-		assert.equal(req.body.model, 'gpt-6-luna-mini');
+		assert.equal(req.body.model, 'gpt-6-luna');
 		assert.equal(req.body.n, 1);
-		assert.equal(req.body.max_completion_tokens, 16000);
+		assert.equal(req.body.max_completion_tokens, 25000);
 		assert.deepEqual(req.body.response_format, { type: 'json_object' });
 		for (const absent of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty', 'max_tokens', 'reasoning_effort']) {
 			assert.ok(!(absent in req.body), `${absent} should not be sent`);
@@ -248,6 +249,8 @@ describe('exporting', () => {
 		openai.handler = () => completion(CARDS, ALT);
 		const plugin = await device({ settings: { questionGenerationDefaults: { file: { numQuestions: 3, numAlternatives: 1 }, textSelection: { numQuestions: 1, numAlternatives: 0 } } } });
 		const ask = await startExport(plugin);
+		await textBox(ask, 'Number of alternatives').type('1');
+		await textBox(ask, 'Number of questions').type('3');
 		await button(ask, 'Generate cards').click();
 		assert.equal(openai.requests[0].body.n, 2);
 
@@ -303,7 +306,7 @@ describe('what the user is told when something goes wrong', () => {
 		assert.match(await failingExport(openAiError(401, 'Incorrect API key provided: sk-proj-****cC33.', 'invalid_api_key')), /rejected the API key \(401\)/);
 	});
 	test('unknown model (404)', async () => {
-		assert.match(await failingExport(openAiError(404, 'The model `gpt-6-luna-mini` does not exist', 'model_not_found')), /doesn't know the model "gpt-6-luna-mini" \(404\)/);
+		assert.match(await failingExport(openAiError(404, 'The model `gpt-6-luna-mini` does not exist', 'model_not_found')), /doesn't know the model "gpt-6-luna" \(404\)/);
 	});
 	test('rate limit or no credit (429)', async () => {
 		assert.match(await failingExport(openAiError(429, 'You exceeded your current quota', 'insufficient_quota')), /rate limit or quota reached \(429\)/);

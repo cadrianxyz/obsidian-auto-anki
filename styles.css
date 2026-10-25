@@ -110,3 +110,17 @@ If your plugin does not need CSS, delete this file.
     background: var(--color-accent);
     color: var(--text-on-accent);
 }
+
+.auto-anki-add-models {
+    width: min(680px, 90vw);
+}
+
+.auto-anki-model-candidates {
+    max-height: 45vh;
+    overflow-y: auto;
+    margin-block: var(--size-4-2);
+}
+
+.auto-anki-model-advanced {
+    margin-block: var(--size-4-3);
+}

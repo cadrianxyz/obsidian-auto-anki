@@ -73,10 +73,23 @@ export function makeEditor(selection) {
 
 // ---- A device: an Obsidian app with this vault open ----
 
-export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activeNote = 'Some note text.' } = {}) {
+export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activeNote = 'Some note text.', pluginDirectory = MANIFEST.dir } = {}) {
+	const cachePath = `${pluginDirectory}/model-catalog-cache.json`;
+	const adapter = readOnly('vault.adapter', ['append', 'remove', 'rename', 'writeBinary', 'process'], {
+		async read(path) {
+			if (path !== cachePath) throw new Error(`Auto Anki tried to read an unexpected file: ${path}`);
+			if (!(path in disk.files)) throw new Error('File does not exist');
+			return disk.files[path];
+		},
+		async write(path, data) {
+			if (path !== cachePath) throw new Error(`Auto Anki tried to change an unexpected file: ${path}`);
+			disk.files[path] = data;
+			disk.cacheWrites = (disk.cacheWrites ?? 0) + 1;
+		},
+	});
 	const app = {
 		disk,
-		vault: readOnly('vault', NOTE_WRITERS, { adapter: readOnly('vault.adapter', ['write', 'append', 'remove', 'rename', 'writeBinary', 'process'], {}) }),
+		vault: readOnly('vault', NOTE_WRITERS, { adapter }),
 		workspace: {
 			activeNote,
 			getActiveViewOfType() {
@@ -98,6 +111,12 @@ export async function loadPlugin(app) {
 export function openSettings(plugin) {
 	const tab = plugin.settingTabs[0];
 	tab.display();
+	return tab;
+}
+
+export function openProviderSettings(plugin, name = 'OpenAI') {
+	const tab = openSettings(plugin);
+	tab.openPage(name);
 	return tab;
 }
 

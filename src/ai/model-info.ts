@@ -28,6 +28,10 @@ export interface ProviderModelInfo {
 	id: string;
 	displayName: string;
 	capabilities?: ModelCapabilities;
+	/** Public catalogue metadata used to filter and order the Add models list. */
+	outputModalities?: string[];
+	isEmbedding?: boolean;
+	releaseDate?: string;
 	/** A reported model limit, not the user-selected output ceiling. */
 	maxOutputTokens?: number;
 }

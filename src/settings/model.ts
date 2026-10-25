@@ -12,6 +12,8 @@ export type CoverageLevel = typeof COVERAGE_LEVELS[number];
 /** Settings for one model ID, keeping user choices separate from discovered capabilities. */
 export interface ModelSettings {
 	id: string;
+	/** Show this model in the normal picker. Hiding it keeps its per-model settings. */
+	enabled: boolean;
 	/** User-selected level; 'default' omits the API parameter and uses the model's own default. */
 	reasoningEffort: ModelReasoningEffort;
 	/** Per-request output ceiling, including reasoning tokens where the provider counts them. */
@@ -28,7 +30,7 @@ export interface ProviderSettings {
 	id: ProviderId;
 	name: string;
 	secretName: string;
-	/** Saved per-model preferences, not a fixed catalogue; the selectable list comes from the provider. */
+	/** Models the user has added, including hidden ones. Discovery is kept separately. */
 	models: ModelSettings[];
 }
 
@@ -109,7 +111,7 @@ export interface SettingsV1 {
 
 /** Fresh per-model defaults; choosing Model default leaves reasoning effort out of the request. */
 export function createModelSettings(id: string): ModelSettings {
-	return { id, reasoningEffort: 'default', maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS, outputMode: OutputMode.Auto, acceptsImages: 'auto' };
+	return { id, enabled: true, reasoningEffort: 'default', maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS, outputMode: OutputMode.Auto, acceptsImages: 'auto' };
 }
 
 function createProviderSettings(id: ProviderId): ProviderSettings {
@@ -152,6 +154,8 @@ function normalizeModel(value: unknown, providerId: ProviderId): ModelSettings |
 	const id = asNonEmptyString(stored.id)?.trim();
 	if (!id) return null;
 	const model = createModelSettings(id);
+	// Models saved before visibility was configurable remain enabled after upgrading.
+	model.enabled = asBoolean(stored.enabled, true);
 	const capabilities = normalizeModelCapabilities(stored.capabilities);
 	if (capabilities) model.capabilities = capabilities;
 	model.reasoningEffort = asOption(stored.reasoningEffort, getReasoningEffortsForModel(providerId, model), model.reasoningEffort);
@@ -194,7 +198,7 @@ export function normalizeSettings(value: unknown): SettingsV1 {
 	const selected = asRecord(stored.defaultModel);
 	if (typeof selected.providerId === 'string' && PROVIDER_IDS.includes(selected.providerId as ProviderId)) {
 		const selectedProvider = settings.providers[selected.providerId as ProviderId];
-		if (selectedProvider.models.some(model => model.id === selected.modelId)) {
+		if (selectedProvider.models.some(model => model.id === selected.modelId && model.enabled)) {
 			settings.defaultModel = { providerId: selectedProvider.id, modelId: selected.modelId as string };
 		}
 	}

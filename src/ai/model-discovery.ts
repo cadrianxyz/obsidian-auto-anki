@@ -31,7 +31,7 @@ interface ProviderRefresh {
  * installed plugin folder, separately from settings. In-flight requests and account
  * availability stay in memory: API keys and access may differ across devices.
  * This service makes only metadata GET requests, never card-generation requests.
- * Runtime call sites are described in docs/model-discovery.md; currently tests call it.
+ * Startup and provider settings use this service; see docs/model-discovery.md.
  */
 export class ModelDiscovery {
 	private readonly models = new Map<ProviderId, ProviderModelInfo[]>();
@@ -54,7 +54,7 @@ export class ModelDiscovery {
 		this.catalogRestore = (async () => {
 			const cached = await this.cacheFile?.load();
 			if (!cached) return;
-			this.catalogFetchedAt = cached.fetchedAt;
+			if (Object.keys(cached.providers).length) this.catalogFetchedAt = cached.fetchedAt;
 			for (const id of PROVIDER_IDS) {
 				const models = cached.providers[id];
 				if (models) this.catalog[id] = new Map(models.map(model => [model.id, model]));
@@ -72,6 +72,13 @@ export class ModelDiscovery {
 			if (models) providers[id] = [...models.values()];
 		}
 		return normalizeModelCatalogCache({ fetchedAt: this.catalogFetchedAt, providers });
+	}
+
+	/** A key changed in settings; discard the previous account's live list and pending reply. */
+	clearProvider(providerId: ProviderId): void {
+		this.providerRefreshes.get(providerId)?.cancel();
+		this.providerRefreshes.delete(providerId);
+		this.models.delete(providerId);
 	}
 
 	/** Refresh the live list. A failed refresh leaves the last successful list available. */
@@ -137,6 +144,9 @@ export class ModelDiscovery {
 			// API replies sometimes contain only an ID; use a catalogue label in that case.
 			const displayName = remote && remote.displayName !== id ? remote.displayName : catalog?.displayName ?? id;
 			const model: ProviderModelInfo = { id, displayName };
+			if (catalog?.outputModalities) model.outputModalities = [...catalog.outputModalities];
+			if (catalog?.isEmbedding) model.isEmbedding = true;
+			if (catalog?.releaseDate) model.releaseDate = catalog.releaseDate;
 			if (Object.keys(capabilities).length) {
 				model.capabilities = { ...capabilities };
 				if (capabilities.reasoningEfforts) model.capabilities.reasoningEfforts = [...capabilities.reasoningEfforts];

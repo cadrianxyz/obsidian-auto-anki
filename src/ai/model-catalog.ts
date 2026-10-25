@@ -34,6 +34,7 @@ export function readModelCatalog(value: unknown): ModelCatalog | null {
 			if (typeof stored.id !== 'string' || !stored.id.trim()) continue;
 			const id = stored.id.trim();
 			const model: ProviderModelInfo = { id, displayName: typeof stored.name === 'string' && stored.name.trim() ? stored.name : id };
+			readSelectionMetadata(stored, model);
 			const capabilities: ModelCapabilities = {};
 			const input: unknown = asRecord(stored.modalities).input;
 			if (Array.isArray(input) && input.length && input.every((item: unknown) => typeof item === 'string')) {
@@ -69,6 +70,10 @@ export function normalizeModelCatalogCache(value: unknown): ModelCatalogCache | 
 				id: data.id.trim(),
 				displayName: typeof data.displayName === 'string' && data.displayName.trim() ? data.displayName : data.id.trim(),
 			};
+			readSelectionMetadata({
+				modalities: { output: data.outputModalities }, release_date: data.releaseDate,
+				isEmbedding: data.isEmbedding,
+			}, model);
 			const capabilities = normalizeModelCapabilities(data.capabilities);
 			if (capabilities) model.capabilities = capabilities;
 			if (typeof data.maxOutputTokens === 'number' && Number.isSafeInteger(data.maxOutputTokens) && data.maxOutputTokens > 0) {
@@ -78,5 +83,21 @@ export function normalizeModelCatalogCache(value: unknown): ModelCatalogCache | 
 		}
 		if (models.size) providers[id] = [...models.values()];
 	}
-	return Object.keys(providers).length ? { fetchedAt: stored.fetchedAt, providers } : undefined;
+	if (!Object.keys(providers).length) return undefined;
+	return { fetchedAt: stored.fetchedAt, providers };
+}
+
+/** Keep only the fields needed for model selection, including when restoring a cache. */
+function readSelectionMetadata(stored: Record<string, unknown>, model: ProviderModelInfo): void {
+	const output: unknown = asRecord(stored.modalities).output;
+	if (Array.isArray(output) && output.length && output.every((item: unknown) => typeof item === 'string' && item.trim())) {
+		model.outputModalities = [...new Set(output as string[])];
+	}
+	if (stored.isEmbedding === true || /(^|[-_/.\s])embed(ding)?($|[-_/.\s])/i.test(`${model.id} ${typeof stored.family === 'string' ? stored.family : ''}`)) {
+		model.isEmbedding = true;
+	}
+	if (typeof stored.release_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(stored.release_date)) {
+		const timestamp = Date.parse(stored.release_date);
+		if (Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === stored.release_date) model.releaseDate = stored.release_date;
+	}
 }

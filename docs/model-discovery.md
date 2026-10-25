@@ -1,104 +1,139 @@
-# Model discovery: data flow and integration status
+# Choosing a provider and model
 
-The new discovery service currently runs in tests. The existing `src/main.ts`
-still uses the 0.3 settings screen and export commands. The next development
-milestone connects this service to the 1.0 settings screen and settings loader.
-The separate cache-file implementation and discovery's automatic restore/save
-calls are implemented and tested; the running plugin does not instantiate them yet.
+Auto Anki uses an AI service to turn your notes into flashcards. The service,
+such as OpenAI or Claude, is the **provider**. The **model** is the particular AI
+you choose from that provider. Each model can keep its own settings.
 
-## Where each function belongs
+This guide describes the settings in the 1.0 development build. You can configure
+OpenAI and Claude, but card generation currently works through OpenAI. Claude
+generation, sending images and applying the output-mode override are still being
+implemented. Their saved settings will be used by the new generation workflow.
+
+## Set up a provider
+
+An **API key** is a credential from the provider that lets Auto Anki use your AI
+account. Enter the key for the provider you chose.
+
+1. Open **Settings → Auto Anki** and choose **OpenAI** or **Claude**.
+2. Enter your provider's API key and click **Save key**. Saving checks that the
+   Keychain kept the key; fetching the model list then checks the provider connection.
+3. **Your models** contains models you have added. **Add models** (the plus
+   button beside search) opens the full provider list. Select the models you
+   want and click **Add** to put them in your normal picker.
+4. Choose **Use as default model**, or choose the model from **Default model**
+   on the main Auto Anki settings page.
+
+The first time you connect a provider, Auto Anki adds one suggested model to get
+you started. It becomes your default if none is selected. Connecting another
+provider keeps your existing default. Replacing a key keeps your model choices.
+
+**Refresh models** sits beside search inside **Add models**. It updates the
+available choices without enabling them or changing your default.
+
+Adding a model means enabling an existing provider model in your picker. It does
+not create or train an AI. If a new model or exact version is missing from the
+list, open **Advanced: enter a model ID** in Add models and enter the provider's
+exact ID. Your account still needs access to that model.
+
+To hide a model, open it under **Your models** and turn off **Show in model
+picker**. Its settings are kept, and you can turn it on again later. Hiding your
+default clears the default selection; choose another before generating cards.
+Adding a hidden model again also enables it with its saved settings.
+
+Keys are kept in Obsidian's Keychain on this computer. If you sync the vault to
+another computer, add the key there too. A model saved on another computer can
+still be edited under **Your models**. Until its provider has a key on this
+device, **Add models**, discovery controls and **Use as default model** are
+hidden. The default-model picker offers enabled models from providers with a
+saved key, and stays hidden when there are no choices. A saved default that
+needs a key is kept, with a reminder to add that provider's key.
+An empty key box does not delete a saved key. Remove keys through Obsidian's
+Keychain settings when needed.
+
+## Understand a model's settings
+
+| Setting | What it means |
+|---|---|
+| Reasoning effort | How much the model thinks before answering. **Model default** lets the provider choose. Other available levels vary by model. |
+| Maximum output tokens | A ceiling on the response length, including reasoning where the provider counts it. Tokens are the units the provider uses to measure text. The default is 25,000; you pay for what is used. |
+| Output mode | How Auto Anki asks the model to return card data in a form the plugin can read. Leave **Auto** selected unless troubleshooting. |
+| Accepts images | Whether the model can read diagrams sent with a note. **Auto** uses the available model information; **Yes** and **No** let you override it. |
+
+Changing one model's settings leaves your other models' settings as they were.
+Saving a setting does not generate cards.
+**Output mode** and **Accepts images** are under the model's **Advanced** page;
+ordinary use can leave both at Auto.
+
+## Where the model choices come from
+
+Auto Anki asks connected providers for their model lists when you open settings.
+**Refresh models** fetches the list again whenever you need it. New IDs become
+available in **Add models** without a plugin update. Refreshing never puts them
+in the normal picker automatically: you choose which ones to enable. Saved or
+manually entered IDs stay available even when a refresh fails.
+
+In either provider's **Add models** screen, you can browse the full discovered list. Models reported
+as unable to generate text are labelled and cannot be selected for flashcards;
+unknown capabilities remain selectable. Being listed does not guarantee that a
+model supports Auto Anki's generation request format.
+
+The normal picker contains only enabled models. Your current default appears
+first, then models with known release dates from newest to oldest, then names
+and IDs. **Add models** puts your saved models first, followed by the same date
+and name ordering. This is a browsing order, not a ranking of flashcard quality.
+
+If discovery fails, your saved choices remain usable. A saved model stays
+enabled until you hide it, even if a later provider list omits its ID. You may
+need to check with the provider if that model no longer works for your account.
+
+[models.dev](https://models.dev/) is a public database that adds readable model
+names and information such as image support and token limits. It supplements the
+provider's list. It does not decide which models your account can access.
 
 ```mermaid
 flowchart TD
-    API["OpenAI or Claude model-list response"] --> Fetch["model-discovery.ts: fetchProvider"]
-    Fetch --> Parse["model-discovery.ts: readProviderModelInfo"]
-    Public["models.dev public model database"] --> Catalog["model-catalog.ts: readModelCatalog"]
-    Disk["Plugin folder: model-catalog-cache.json"] --> Restore["model-catalog-cache.ts: load"]
-    Restore --> Merge
-    Parse --> Merge["model-discovery.ts: getModels"]
-    Catalog --> Merge
-    Saved["Saved preferences and manually entered model IDs"] --> Merge
-    Merge --> Picker["Upcoming settings model picker"]
-    Picker --> Effort["model-info.ts: getReasoningEffortsForModel"]
-    Catalog --> Save["model-catalog-cache.ts: save after successful refresh"]
-    Save --> Disk
+    Provider["OpenAI or Claude"] --> IDs["Model IDs available from the provider"]
+    Public["models.dev public model database"] --> Details["Model names and abilities"]
+    Cache["Saved copy in model-catalog-cache.json"] --> Details
+    Details --> Save["Save after a successful download"]
+    Save --> Cache
+    IDs --> Choices["Add models: search available choices"]
+    Details --> Choices
+    Manual["Advanced: enter an exact model ID"] --> Choices
+    Choices --> Selection["Choose models and click Add"]
+    Selection --> Saved["Your models: saved settings and visibility"]
+    Saved --> Enabled["Show in model picker is on"]
+    Enabled --> Picker["Default-model picker"]
+    Saved --> Hidden["Hidden models keep their settings"]
+    Hidden --> Selection
+    Picker --> Settings["Each model's settings, including reasoning options"]
 ```
 
-`readProviderModelInfo` is required at the network boundary: it checks the raw
-provider response and translates provider-specific names into our common model
-information. It lives beside the fetch that consumes that response.
+Your API key goes to the selected provider. Requests to models.dev contain no
+API key or note content. Downloaded model information
+cannot change the provider address used for your connection.
 
-`model-info.ts` defines that common information, the `OutputMode` enum, cached
-capability validation and offline reasoning-option selection. Those are shared
-between discovery and saved-settings validation, so they do not depend on a fetch.
+## What is saved
 
-`utils/data.ts` holds generic checks for objects, strings, booleans, options and
-positive whole numbers. AnkiConnect URL rules and Anki field mappings remain in
-settings because they describe that setting's meaning, not a generic data type.
-
-`model-catalog-cache.ts` handles reading and writing the separate cache file through
-Obsidian's vault adapter. `model-catalog.ts` validates the public data stored there.
-Neither uses the settings loader or `data.json` for catalogue storage.
-
-## Planned runtime calls
-
-| User action or event | Code to run when the settings interface is integrated |
+| Information | Where it is kept |
 |---|---|
-| Plugin starts | `prepareSettings()` validates/upgrades data.json. Create `ModelCatalogCacheFile` with `app.vault.adapter` and `plugin.manifest.dir`, pass it to `ModelDiscovery`, and await `restoreCatalog()` to restore public metadata without a network request. If the installed plugin directory is unavailable, omit file caching. |
-| A configured provider's settings page opens | Read its key from the Keychain and call `refreshProvider()`. Request optional public metadata through `refreshCatalog()`, which reuses a successful catalogue download for 24 hours. |
-| User explicitly refreshes models | Call `refreshProvider()` and `refreshCatalog(true)`. |
-| User enters a model ID or the live list changes | Call `getModels()` with saved and manual IDs to rebuild the choices. |
-| A model's reasoning dropdown is rendered | Call `getReasoningEffortsForModel()` with its known capabilities. This makes no network request. |
-| A public catalogue refresh succeeds | `refreshCatalog()` automatically saves the public snapshot to `model-catalog-cache.json`. It does not trigger a settings save. |
-| Cards are generated | Use the selected model and its settings. Model-list discovery is not a separate test before each generation. |
+| API keys | Obsidian's Keychain on this computer. |
+| Your added models, their settings and whether they are enabled | The plugin's `data.json` settings file. |
+| Public model names and abilities | A separate `model-catalog-cache.json` file in the installed plugin folder. |
+| The provider's current model list | Memory while the plugin is running; it is fetched again on a later settings visit. |
 
-The service does not schedule a daily background job. The 24-hour age is checked
-when `refreshCatalog()` is called. Paid capability testing through the model's
-Test button is a separate feature in the AI-adapter milestone.
-`refreshCatalog()` also awaits the one-time disk restore itself, so the freshness
-check remains correct even if the caller has not restored the cache at startup.
+A **cache** is a saved copy of downloaded information. Auto Anki restores the
+public model information when the plugin starts. When model information is next
+requested, it normally reuses this copy for up to 24 hours. **Refresh models**
+requests a fresh copy immediately.
 
-## Why the public catalogue does not configure connections
+If a download fails, the previous copy can still provide model names and details.
+If the cache file is missing or unreadable, Auto Anki can download it again. You
+can delete that file without losing your settings or keys; a failed cache save
+also leaves newly downloaded information usable while the plugin is running.
 
-models.dev (https://models.dev) is an independently maintained public database of
-model names, supported input formats and token limits. It can supply information
-that a provider's own model-list response omits. It does not establish which
-models an account can use, and an absent entry must not prevent a new model ID
-from being selected.
-
-For 1.0, connection addresses and authentication headers stay in the two provider
-presets, checked against provider documentation. This keeps credential routing
-stable when descriptive metadata updates and lets provider discovery work even
-when the public catalogue is unavailable. The tradeoff is that an official API
-address change requires a preset update. User-specified custom addresses belong
-to the planned custom-provider release.
-
-The catalogue's SDK-package fields describe how other software can instantiate
-SDKs. Auto Anki has its own two protocol adapters and uses Obsidian's `requestUrl`,
-so those package names do not configure anything in this implementation.
-
-## What is saved, and why
-
-| Data | Lifetime | Reason |
-|---|---|---|
-| Public catalogue names and capability hints | Normalised snapshot in `model-catalog-cache.json` inside the installed plugin folder | Reuse across restarts, display saved models offline, and avoid downloading again on every launch. This replaceable data stays separate from user settings. |
-| Provider's current account-specific model list | Memory | Keys and account access can differ between devices sharing data.json; a synced list must not be treated as access granted on another device. Saved/manual model IDs remain selectable. |
-| User's selected model and per-model preferences | Existing settings in `data.json` | Discovery must not replace explicit choices. |
-| Active requests, cancellation callbacks and request credentials | Memory while requests are active | They cannot be restored meaningfully after restarting and must not enter the saved cache. |
-
-Only the supported providers' normalised model information is saved, not the full
-public response. Addresses, SDK fields, keys and account availability are excluded.
-The path comes from `plugin.manifest.dir`, so custom Obsidian config directories
-work without hardcoding `.obsidian`. No additional vault folder is created, and
-no cache metadata is written to `data.json`. This separate cache file follows the
-review decision to keep downloaded metadata out of the settings file.
-
-A missing, unreadable or malformed file is treated as an empty cache. The next
-successful download recreates it. A failed file write does not prevent the fresh
-metadata from being used in memory. Deleting the cache file does not remove user
-preferences; it only causes metadata to be downloaded again on a later launch.
-
-A stale snapshot remains useful when refresh fails. It supplies labels and hints,
-not proof of current availability or a reason to change a selected model. A
-provider response takes precedence over saved capability results and catalogue
-hints; explicit user overrides are held separately.
+Settings from an older Auto Anki version are upgraded when loaded. Changes synced
+from another computer are also checked before use. If the settings file cannot
+be read or needs a newer plugin version, Auto Anki keeps the previous choices
+and disables editing until a successful reload, so edits cannot overwrite that
+file with the wrong settings.

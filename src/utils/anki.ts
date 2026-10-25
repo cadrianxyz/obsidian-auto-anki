@@ -6,11 +6,16 @@ const ANKI_VERSION = 6;
 // const ANKI_DEFAULT_DECK = 'Default';
 export const ANKI_CONNECT_DEFAULT_PORT = 8765;
 
-export async function checkAnkiAvailability(ankiPort: number) {
+// Legacy callers supply a port; the 1.0 settings store supplies a complete URL.
+function ankiConnectUrl(address: number | string): string {
+    return typeof address === 'number' ? `http://127.0.0.1:${address}` : address;
+}
+
+export async function checkAnkiAvailability(ankiPort: number | string) {
     try {
         await requestUrl({
             method: 'POST',
-            url: `http://127.0.0.1:${ankiPort}`,
+            url: ankiConnectUrl(ankiPort),
             body: JSON.stringify({
                 action: 'deckNames',
                 version: ANKI_VERSION,
@@ -21,7 +26,7 @@ export async function checkAnkiAvailability(ankiPort: number) {
         return true;
     }
     catch {
-        new Notice(`ERR: Could not connect to Anki! Please ensure you have AnkiConnect running on port ${ankiPort}.`);
+        new Notice(`ERR: Could not connect to Anki! Please ensure AnkiConnect is running at ${ankiConnectUrl(ankiPort)}.`);
         return false;
     }
 }
@@ -50,7 +55,7 @@ interface AddCardsOutcome {
 // One addNote per card inside a single `multi` request, so every card gets its own
 // result. With addNotes, a refused card is either counted as exported (older
 // AnkiConnect) or fails the whole batch (newer AnkiConnect).
-async function addCardsToAnki(ankiPort: number, deck: string, data: CardInformation[]): Promise<AddCardsOutcome | null> {
+async function addCardsToAnki(ankiPort: number | string, deck: string, data: CardInformation[]): Promise<AddCardsOutcome | null> {
     // for anki connect, the request format is (https://foosoft.net/projects/anki-connect/)
     const actions = data.map((card) => ({
         action: 'addNote',
@@ -74,7 +79,7 @@ async function addCardsToAnki(ankiPort: number, deck: string, data: CardInformat
     try {
         res = await requestUrl({
             method: 'POST',
-            url: `http://127.0.0.1:${ankiPort}`,
+            url: ankiConnectUrl(ankiPort),
             body: JSON.stringify({
                 action: 'multi',
                 version: ANKI_VERSION,
@@ -84,7 +89,7 @@ async function addCardsToAnki(ankiPort: number, deck: string, data: CardInformat
         });
     }
     catch {
-        new Notice(`ERR: Could not connect to Anki! Please ensure you have AnkiConnect running on port ${ankiPort}.`);
+        new Notice(`ERR: Could not connect to Anki! Please ensure AnkiConnect is running at ${ankiConnectUrl(ankiPort)}.`);
         return null;
     }
 
@@ -106,12 +111,12 @@ async function addCardsToAnki(ankiPort: number, deck: string, data: CardInformat
     return outcome;
 }
 
-export async function getAnkiDecks(ankiPort: number) {
+export async function getAnkiDecks(ankiPort: number | string) {
     let res;
     try {
         res = await requestUrl({
             method: 'POST',
-            url: `http://127.0.0.1:${ankiPort}`,
+            url: ankiConnectUrl(ankiPort),
             body: JSON.stringify({
                 action: 'deckNames',
                 version: ANKI_VERSION,
@@ -121,7 +126,7 @@ export async function getAnkiDecks(ankiPort: number) {
         });
     }
     catch {
-        new Notice(`ERR: Could not connect to Anki! Please ensure you have AnkiConnect running on port ${ankiPort}.`);
+        new Notice(`ERR: Could not connect to Anki! Please ensure AnkiConnect is running at ${ankiConnectUrl(ankiPort)}.`);
         return [];
     }
     const reply = readReply(res.json);
@@ -130,7 +135,7 @@ export async function getAnkiDecks(ankiPort: number) {
         : [];
 }
 
-export async function checkAnkiDecksExist(ankiPort: number) {
+export async function checkAnkiDecksExist(ankiPort: number | string) {
     const decks = await getAnkiDecks(ankiPort);
     if (decks.length == 0) {
         new Notice('Your Anki collection has no decks. Create one in Anki first.')
@@ -140,7 +145,7 @@ export async function checkAnkiDecksExist(ankiPort: number) {
     return true;
 }
 
-export async function exportToAnki(cards: CardInformation[], port: number, deck: string) {
+export async function exportToAnki(cards: CardInformation[], port: number | string, deck: string) {
     const outcome = await addCardsToAnki(port, deck, cards);
     if (outcome == null) return false;
 
