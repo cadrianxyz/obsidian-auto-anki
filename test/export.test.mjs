@@ -160,14 +160,15 @@ describe('exporting', () => {
 		assert.match(req.url, /\/chat\/completions$/);
 		assert.equal(req.headers.get('authorization'), `Bearer ${KEY}`);
 		assert.equal(req.body.model, 'gpt-6-luna');
-		assert.equal(req.body.n, 1);
+		assert.equal(req.body.n, undefined);
 		assert.equal(req.body.max_completion_tokens, 25000);
-		assert.deepEqual(req.body.response_format, { type: 'json_object' });
+		assert.equal(req.body.response_format.type, 'json_schema');
+		assert.equal(req.body.response_format.json_schema.strict, true);
 		for (const absent of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty', 'max_tokens', 'reasoning_effort']) {
 			assert.ok(!(absent in req.body), `${absent} should not be sent`);
 		}
 		assert.match(req.body.messages.at(-1).content, /A radix is…/);
-		assert.match(req.body.messages[0].content, /list of 5 questions/);
+		assert.match(req.body.messages[0].content, /There is no fixed number of cards/);
 
 		// What was added to Anki: one Basic note per card, in the chosen deck.
 		assert.deepEqual(anki.added.map((n) => [n.deckName, n.modelName, n.fields.Front, n.fields.Back]),
@@ -177,15 +178,14 @@ describe('exporting', () => {
 		assert.deepEqual([...new Set(ankiActionsSent())].sort(), ['addNote', 'deckNames', 'multi']);
 	});
 
-	test('selected text uses the selected-text defaults', async () => {
+	test('selected text starts with a maximum of three cards', async () => {
 		ankiServer();
 		openai.handler = () => completion(CARDS.slice(0, 1));
 		const plugin = await device();
 		run(plugin, SELECTION, 'Hexadecimal is base 16.');
 		const ask = lastModal();
 		await ask.opened;
-		assert.equal(textBox(ask, 'Number of questions').value, '1');
-		assert.equal(textBox(ask, 'Number of alternatives').value, '0');
+		assert.equal(textBox(ask, 'Maximum cards').value, '3');
 		await button(ask, 'Generate cards').click();
 		assert.match(openai.requests[0].body.messages.at(-1).content, /Hexadecimal is base 16\./);
 	});
@@ -197,6 +197,14 @@ describe('exporting', () => {
 		await exportAll(plugin);
 		assert.equal(openai.requests[0].body.reasoning_effort, 'low');
 		assert.equal(openai.requests[0].body.max_completion_tokens, 5000);
+	});
+
+	test('literal comparisons, code and line breaks are preserved in Anki text fields', async () => {
+		const anki = ankiServer();
+		openai.handler = () => completion([{ q: 'When does x < y evaluate to true?', a: 'When x is smaller.\nA <T> & B are literal text.' }]);
+		await exportAll(await device());
+		assert.equal(anki.added[0].fields.Front, 'When does x &lt; y evaluate to true?');
+		assert.equal(anki.added[0].fields.Back, 'When x is smaller.<br>A &lt;T&gt; &amp; B are literal text.');
 	});
 
 	test('the default deck is preselected; another can be picked', async () => {
@@ -243,52 +251,41 @@ describe('exporting', () => {
 		assert.deepEqual(anki.added.map((n) => n.fields.Front), [CARDS[0].q]);
 	});
 
-	test('alternatives: one window per question, picks from each are exported together', async () => {
+	test('a per-run maximum limits reviewed and exported cards without changing saved preferences', async () => {
 		const anki = ankiServer();
-		const ALT = CARDS.map((c) => ({ q: `${c.q} (alt)`, a: c.a }));
-		openai.handler = () => completion(CARDS, ALT);
-		const plugin = await device({ settings: { questionGenerationDefaults: { file: { numQuestions: 3, numAlternatives: 1 }, textSelection: { numQuestions: 1, numAlternatives: 0 } } } });
+		openai.handler = () => completion(CARDS);
+		const plugin = await device();
+		const before = structuredClone(plugin.settings.cards);
 		const ask = await startExport(plugin);
-		await textBox(ask, 'Number of alternatives').type('1');
-		await textBox(ask, 'Number of questions').type('3');
+		await textBox(ask, 'Maximum cards').type('2');
 		await button(ask, 'Generate cards').click();
-		assert.equal(openai.requests[0].body.n, 2);
-
+		assert.equal(openai.requests.length, 1);
+		assert.match(openai.requests[0].body.messages[0].content, /Return at most 2 cards/);
 		const choose = lastModal();
-		const pickedFronts = [];
-		for (let i = 0; i < 3; i++) {
-			const items = questionItems(choose);
-			assert.equal(items.length, 2, `question ${i + 1} should offer 2 versions`);
-			items[i % 2].click();
-			pickedFronts.push(items[i % 2].children[0].text);
-			if (i < 2) await button(choose, 'Next').click();
-		}
-		await button(choose, 'Previous').click();
-		await button(choose, 'Next').click();
+		assert.equal(questionItems(choose).length, 2);
+		assert.match(choose.contentEl.textContent, /exceeds the maximum of 2/);
+		await button(choose, 'Select all').click();
 		await button(choose, 'Confirm selection').click();
 		const decks = lastModal();
 		await decks.opened;
 		await button(decks, 'Confirm and export').click();
-		assert.deepEqual(anki.added.map((n) => n.fields.Front), pickedFronts);
+		assert.deepEqual(anki.added.map(note => note.fields.Front), CARDS.slice(0, 2).map(card => card.q));
+		assert.deepEqual(plugin.settings.cards, before);
 	});
 
-	for (const [label, values] of [
-		['zero questions', ['0', '0']],
-		['negative alternatives', ['3', '-1']],
-		['text', ['five', '0']],
-	]) {
-		test(`${label}: refused before anything is sent`, async () => {
+	for (const value of ['0', '-1', 'five', '1.5', 'Infinity', '1e3', '9007199254740992']) {
+		test(`invalid maximum ${value}: refused before anything is sent`, async () => {
 			ankiServer();
 			openai.handler = () => completion(CARDS);
 			const plugin = await device();
 			const ask = await startExport(plugin);
-			await textBox(ask, 'Number of questions').type(values[0]);
-			await textBox(ask, 'Number of alternatives').type(values[1]);
+			await textBox(ask, 'Maximum cards').type(value);
 			await button(ask, 'Generate cards').click();
 			assert.equal(openai.requests.length, 0);
-			assert.match(fake.notices.at(-1), /invalid number/i);
+			assert.match(fake.notices.at(-1), /positive whole number/);
 		});
 	}
+
 });
 
 describe('what the user is told when something goes wrong', () => {

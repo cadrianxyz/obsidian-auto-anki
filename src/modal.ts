@@ -1,145 +1,135 @@
-import { App, Modal, Notice, Setting } from 'obsidian';
-import { GenerationOptions } from './settings';
+import { Modal, Notice, Setting, type App, type ButtonComponent } from 'obsidian';
+import type { ModelSettings, SettingsV1 } from './settings/model';
+import { OutputMode, type ResolvedOutputMode } from './ai/model-info';
+import { COVERAGE_LABELS, type RunPreferences } from './generate/prompt';
+import { generateCards } from './generate/run';
+import type { CardInformation, GenerationResult } from './generate/result';
+import { cleanNote, type SourceNote } from './note/read';
+import { prepareDiagrams, type PreparedDiagrams } from './note/images';
+import { checkAnkiAvailability, checkAnkiDecksExist, exportToAnki, getAnkiDecks } from './utils/anki';
+import type { StatusBarElement } from './utils/cusom-types';
 
-import { 
-    checkAnkiAvailability,
-    checkAnkiDecksExist,
-    exportToAnki,
-    getAnkiDecks,
-} from './utils/anki';
-import { CardInformation, checkGpt, convertNotesToFlashcards } from './utils/gpt';
-import { StatusBarElement } from './utils/cusom-types';
-
-// import { SAMPLE_CARD_INFORMATION } from 'sample/sample_card_information';
-
-function checkValidNumGreaterThanZero(text: string|number, inclusiveZero?: boolean) {
-    if (typeof text == 'string' && text === '') return false;
-    if (isNaN(+text)) return false;
-    return inclusiveZero ? +text >= 0 : +text > 0;
+function showGenerationMessages(container: HTMLElement, result: Pick<GenerationResult, 'noteIssues' | 'warnings'>): void {
+	if (result.noteIssues.length) {
+		container.createEl('p', { text: 'Check these claims in your note. The model was asked to leave suspected mistakes out of the cards.' });
+		const list = container.createEl('ul');
+		for (const issue of result.noteIssues) list.createEl('li', { text: issue });
+	}
+	if (result.warnings.length) {
+		const details = container.createEl('details');
+		details.createEl('summary', { text: 'Skipped content and diagram notes' });
+		const list = details.createEl('ul');
+		for (const warning of result.warnings) list.createEl('li', { text: warning });
+	}
 }
+
+/** Confirm the actual source, diagram handling and per-run preferences before a paid request. */
 export class ExportModal extends Modal {
-    n_q: number;
-    n_q_valid: boolean;
-    n_alt: number;
-    n_alt_valid: boolean;
-    data: string;
-    apiKey: string;
-    model: string;
-    port: number | string;
-    deck: string;
-    generationOptions: GenerationOptions;
-    statusBar: StatusBarElement;
-    
-    constructor(
-        app: App,
-        statusBar: StatusBarElement,
-        data: string,
-        apiKey: string,
-        openAiModel: string,
-        ankiConnectPort: number | string,
-        ankiDestinationDeck: string,
-        generationOptions: GenerationOptions,
-        dafaultNumQuestions?: number,
-        defaultNumAlternatives?: number,
-    ) {
-        super(app);
-        this.statusBar = statusBar;
-        this.data = data;
-        this.apiKey = apiKey;
-        this.model = openAiModel;
-        this.port = ankiConnectPort;
-        this.deck = ankiDestinationDeck;
-        this.generationOptions = generationOptions;
+	private readonly run: RunPreferences;
+	private maximumText: string;
+	private diagrams: PreparedDiagrams = { diagrams: [], warnings: [] };
+	private busy = false;
+	private closed = false;
+	private readonly controller = new AbortController();
+	private generateButton?: ButtonComponent;
+	private readonly controls: { setDisabled(disabled: boolean): unknown }[] = [];
 
-        this.n_q = dafaultNumQuestions ?? 5;
-        this.n_q_valid = checkValidNumGreaterThanZero(this.n_q);
-        this.n_alt = defaultNumAlternatives ?? 3;
-        this.n_alt_valid = checkValidNumGreaterThanZero(this.n_alt, true);
-    }
+	constructor(
+		app: App,
+		private readonly statusBar: StatusBarElement,
+		private readonly source: SourceNote,
+		private readonly apiKey: string,
+		private readonly model: ModelSettings,
+		private readonly address: string,
+		private readonly deck: string,
+		private readonly cards: SettingsV1['cards'],
+		private readonly selection: boolean,
+		private readonly rememberOutputMode: (mode: ResolvedOutputMode) => Promise<void>,
+	) {
+		super(app);
+		this.source = { ...source, markdown: cleanNote(source.markdown) };
+		this.run = { coverage: cards.coverageLevel, instructions: '' };
+		this.maximumText = selection ? '3' : '';
+	}
 
-    async onOpen() {
-        const { contentEl } = this;
+	async onOpen(): Promise<void> {
+		this.titleEl.setText(this.selection ? `Make cards from a selection in “${this.source.title}”` : `Make cards from “${this.source.title}”`);
+		if (!await checkAnkiAvailability(this.address) || !await checkAnkiDecksExist(this.address)) {
+			this.statusBar.doDisplayError?.(); this.close(); return;
+		}
+		if (this.closed) return;
+		this.statusBar.doReset?.();
+		const status = this.contentEl.createEl('p', { text: 'Preparing the note and diagrams…', attr: { role: 'status' } });
+		this.contentEl.createEl('p', { text: `Model: ${this.model.id}. Cards are generated as text questions and answers. Diagrams provide source material for those answers.` });
+		new Setting(this.contentEl).setName('Coverage').setDesc('Choose how much detail to turn into cards. This choice applies to this run only.')
+			.addDropdown(dropdown => {
+				this.controls.push(dropdown);
+				for (const [value, label] of Object.entries(COVERAGE_LABELS)) dropdown.addOption(value, label);
+				dropdown.setValue(this.run.coverage).onChange(value => {
+					if (!this.busy && Object.prototype.hasOwnProperty.call(COVERAGE_LABELS, value)) this.run.coverage = value as RunPreferences['coverage'];
+				});
+			});
+		const advanced = this.contentEl.createEl('details');
+		advanced.createEl('summary', { text: 'Advanced' });
+		new Setting(advanced).setName('Maximum cards').setDesc('Optional limit for this run. Leave empty to let the useful material determine the count.')
+			.addText(text => { this.controls.push(text); text.setValue(this.maximumText).setPlaceholder('No limit').onChange(value => { if (!this.busy) this.maximumText = value; }); });
+		const instructions = advanced.createDiv({ cls: 'auto-anki-instructions' });
+		new Setting(instructions).setName('Instructions for this run').setDesc('One-off guidance added after your saved extra instructions. Markdown and line breaks are kept; this text is not saved.')
+			.addTextArea(text => { this.controls.push(text); text.inputEl.rows = 4; text.onChange(value => { if (!this.busy) this.run.instructions = value; }); });
+		const warnings = this.contentEl.createDiv();
+		new Setting(this.contentEl).addButton(button => button.setButtonText('Cancel').onClick(() => this.close()))
+			.addButton(button => { this.generateButton = button; button.setButtonText('Generate cards').setCta().setDisabled(true).onClick(() => this.generate()); });
+		try {
+			this.diagrams = await prepareDiagrams(this.app, this.source.markdown, this.source.path, this.cards.sendDiagrams, this.model);
+			if (this.closed) return;
+			status.setText(`Sends: ${this.selection ? 'selected text' : 'the note'} and ${this.diagrams.diagrams.length} ${this.diagrams.diagrams.length === 1 ? 'diagram' : 'diagrams'}. Frontmatter and Obsidian comments are excluded.`);
+			showGenerationMessages(warnings, { noteIssues: [], warnings: this.diagrams.warnings });
+			if (!this.source.markdown.trim() && !this.diagrams.diagrams.length) status.setText('There is no study material after removing frontmatter and comments.');
+			else this.generateButton?.setDisabled(false);
+		}
+		catch {
+			if (!this.closed) status.setText('The note could not be prepared. Close this dialog and try again.');
+		}
+	}
 
-        const isAnkiAvailable = await checkAnkiAvailability(this.port);
-        // update status bar if error/success
-        if (this.statusBar.doDisplayError && !isAnkiAvailable) this.statusBar.doDisplayError();
-        if (this.statusBar.doReset && isAnkiAvailable) this.statusBar.doReset();
-        if (!isAnkiAvailable) return this.close();
+	private async generate(): Promise<void> {
+		if (this.busy || this.closed) return;
+		const maximum = this.maximumText.trim();
+		if (maximum && (!/^\d+$/.test(maximum) || !Number.isSafeInteger(Number(maximum)) || Number(maximum) < 1)) {
+			new Notice('Enter a positive whole number for maximum cards, or leave it empty.'); return;
+		}
+		this.run.maximumCards = maximum ? Number(maximum) : undefined;
+		this.busy = true;
+		for (const control of this.controls) control.setDisabled(true);
+		this.generateButton?.setDisabled(true).setButtonText('Generating…');
+		this.statusBar.doDisplayRunning?.();
+		try {
+			const result = await generateCards(this.apiKey, this.model, this.cards, this.run, this.source, this.diagrams, this.controller.signal);
+			if (this.closed) return;
+			if (this.model.outputMode === OutputMode.Auto) await this.rememberOutputMode(result.outputMode);
+			if (this.closed) return;
+			this.statusBar.doReset?.();
+			this.close();
+			new ChoiceModal(this.app, result.cards, this.address, this.deck, result).open();
+		}
+		catch (error) {
+			if (!this.closed) { this.statusBar.doDisplayError?.(); new Notice(error instanceof Error ? error.message : 'Card generation failed.', 0); }
+		}
+		finally {
+			this.busy = false;
+			if (!this.closed) {
+				for (const control of this.controls) control.setDisabled(false);
+				this.generateButton?.setDisabled(false).setButtonText('Generate cards');
+			}
+		}
+	}
 
-        const ankiCheck = await checkAnkiDecksExist(this.port);
-        if (this.statusBar.doDisplayError && !ankiCheck) this.statusBar.doDisplayError();
-        if (this.statusBar.doReset && ankiCheck) this.statusBar.doReset();
-        if (!ankiCheck) return this.close();
-
-        contentEl.createEl('h1', { text: 'How many questions should be generated?' });
-
-        new Setting(contentEl)
-            .setName('Number of questions')
-            .addText((text) => text
-                .setValue(String(this.n_q))
-                .onChange((value) => {
-                    this.n_q_valid = checkValidNumGreaterThanZero(value);
-                    this.n_q = Number(value)
-                })
-            );
-
-        new Setting(contentEl)
-            .setName('Number of alternatives')
-            .setDesc('Generate multiple versions of questions and choose your favorite ones!')
-            .addText((text) => text
-                .setValue(String(this.n_alt))
-                .onChange((value) => {
-                    this.n_alt_valid = checkValidNumGreaterThanZero(value, true);
-                    this.n_alt = Number(value)
-                })
-            );
-
-        new Setting(contentEl)
-            .addButton((btn) =>
-                btn
-                .setButtonText('Generate cards')
-                .setCta()
-                .onClick(async () => {
-                    if (!this.n_q_valid || !this.n_alt_valid) {
-                        new Notice('An invalid number was entered!');
-                        return;
-                    }
-                    this.close();
-
-                    let isRequestValid = false;
-                    isRequestValid = checkGpt(this.apiKey);
-
-                    if (!isRequestValid) return;
-                    if (this.statusBar.doDisplayRunning) this.statusBar.doDisplayRunning();
-                    const card_sets: Array<CardInformation[]> = await convertNotesToFlashcards(
-                        this.apiKey,
-                        this.model,
-                        this.data,
-                        this.n_q,
-                        this.n_alt+1,
-                        this.generationOptions,
-                    );
-                    if (this.statusBar.doReset) this.statusBar.doReset();
-
-                    if (card_sets.length === 0) return;
-                    // TODO: add loading indicator somewhere
-                    new ChoiceModal(
-                        this.app,
-                        card_sets,
-                        // SAMPLE_CARD_INFORMATION,
-                        this.port,
-                        this.deck,
-                        this.n_q,
-                        this.n_alt > 0,
-                    ).open();
-                })
-            );
-    }
-
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
-    }
+	onClose(): void {
+		this.closed = true;
+		this.controller.abort();
+		if (this.busy) this.statusBar.doReset?.();
+		this.contentEl.empty();
+	}
 }
 
 class QuestionSetWithSelections {
@@ -215,157 +205,35 @@ class QuestionSetWithSelections {
     }
 }
 
+/** Keep the existing text-card selection and deck export while the full review UI is built. */
 export class ChoiceModal extends Modal {
-    card_sets: Array<CardInformation[]>;
-    question_sets: QuestionSetWithSelections[];
-    n_sets: number;
-    port: number | string;
-    deck: string;
+	private readonly questions: QuestionSetWithSelections;
+	constructor(app: App, cards: CardInformation[], private readonly port: number | string, private readonly deck: string,
+		private readonly feedback: Pick<GenerationResult, 'noteIssues' | 'warnings'>) {
+		super(app);
+		this.questions = new QuestionSetWithSelections(cards, () => this.renderContent());
+	}
 
-    curr_set: number;
-    
-    constructor(
-        app: App,
-        card_sets: Array<CardInformation[]>,
-        port: number | string,
-        deck: string,
-        n_q: number,
-        has_alternatives: boolean,
-    ) {
-        super(app);
-
-        this.card_sets = card_sets;
-        this.port = port;
-        this.deck = deck;
-
-        // create question sets
-        this.curr_set = 0;
-        this.question_sets = [];
-
-        if (has_alternatives) {
-            this.n_sets = n_q;
-            for (let i = 0; i < n_q; i++) {
-                const question_choices: CardInformation[] = [];
-    
-                card_sets.forEach((set) => {
-                    if (i < set.length) question_choices.push(set[i]);
-                })
-                this.question_sets.push(
-                    new QuestionSetWithSelections(question_choices, () => this.renderContent())
-                );
-            }
-        }
-        else {
-            this.n_sets = 1;
-            this.question_sets.push(
-                new QuestionSetWithSelections(card_sets[0], () => this.renderContent())
-            );
-        }
-    }
-
-    renderContent() {
-        const { contentEl } = this;
-        contentEl.empty();
-
-        // modal title, description
-        if (this.n_sets === 1) {
-            contentEl.createEl('h1', { text: 'Questions' });
-        }
-        else {
-            contentEl.createEl('h1', { text: `Question set ${this.curr_set+1}` });
-        }
-        contentEl.createEl('p', { text: 'Pick one or more of the questions below you want to export to Anki.' });
-
-        // get card set to render
-        const htmlList = this.question_sets[this.curr_set].renderHtmlList();
-        contentEl.appendChild(htmlList);
-
-        // create buttons depending on how many sets there are
-        if (this.n_sets > 1) {
-            // create buttons in modal footer
-            const htmlButtons = createDiv({ cls: 'modal-buttons' });
-            // previous button
-            new Setting(htmlButtons)
-                .addButton((btn) =>
-                    btn
-                    .setButtonText('Previous')
-                    .setCta()
-                    .setClass(this.curr_set === 0 ? 'disabled' : 'enabled')
-                    .setDisabled(this.curr_set === 0)
-                    .onClick(() => {
-                        this.curr_set -= 1;
-                        this.renderContent();
-                    })
-            );
-    
-            // next/confirm button
-            if (this.curr_set < this.n_sets-1){
-                new Setting(htmlButtons)
-                    .addButton((btn) =>
-                        btn
-                        .setButtonText('Next')
-                        .setCta()
-                        .onClick(() => {
-                            this.curr_set += 1;
-                            this.renderContent();
-                        })
-                );
-            }
-            else {
-                new Setting(htmlButtons)
-                    .addButton((btn) =>
-                        btn
-                        .setButtonText('Confirm selection')
-                        .setCta()
-                        .onClick(async () => {
-                            this.close();
-                            const allSelectedCards: CardInformation[] = [];
-                            this.question_sets.forEach((set) => {
-                                const selectedCards = set.extractSelectedQuesions()
-                                allSelectedCards.push(...selectedCards);
-                            })
-                            new AnkiDeckModal(
-                                this.app,
-                                this.port,
-                                this.deck,
-                                allSelectedCards,
-                            ).open();
-                        })
-                );
-            }
-            contentEl.appendChild(htmlButtons);
-        } else {
-            new Setting(contentEl)
-                .addButton((btn) =>
-                    btn
-                    .setButtonText('Confirm selection')
-                    .setCta()
-                    .onClick(async () => {
-                        this.close();
-                        const allSelectedCards: CardInformation[] = [];
-                        this.question_sets.forEach((set) => {
-                            const selectedCards = set.extractSelectedQuesions()
-                            allSelectedCards.push(...selectedCards);
-                        })
-                        new AnkiDeckModal(
-                            this.app,
-                            this.port,
-                            this.deck,
-                            allSelectedCards,
-                        ).open();
-                    })
-            );
-        }
-    }
-
-    onOpen() {
-        this.renderContent();
-    }
-
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
-    }
+	private renderContent(): void {
+		this.contentEl.empty();
+		this.titleEl.setText('Review cards');
+		showGenerationMessages(this.contentEl, this.feedback);
+		if (!this.questions.questions.length) {
+			this.contentEl.createEl('p', { text: 'No cards were generated. The note may not contain enough useful material, or all entries were skipped.' });
+			return;
+		}
+		this.contentEl.createEl('p', { text: 'Pick the cards you want to export to Anki.' });
+		this.contentEl.appendChild(this.questions.renderHtmlList());
+		new Setting(this.contentEl).addButton(button => button.setButtonText('Confirm selection').setCta()
+			.setDisabled(this.questions.selected.size === 0).onClick(() => {
+				const cards = this.questions.extractSelectedQuesions();
+				if (!cards.length) return;
+				this.close();
+				new AnkiDeckModal(this.app, this.port, this.deck, cards).open();
+			}));
+	}
+	onOpen(): void { this.renderContent(); }
+	onClose(): void { this.contentEl.empty(); }
 }
 
 export class AnkiDeckModal extends Modal {

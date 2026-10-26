@@ -124,3 +124,18 @@ If your plugin does not need CSS, delete this file.
 .auto-anki-model-advanced {
     margin-block: var(--size-4-3);
 }
+
+.auto-anki-instructions .setting-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--size-4-3);
+}
+
+.auto-anki-instructions .setting-item-control {
+    justify-content: flex-start;
+}
+
+.auto-anki-instructions textarea {
+    width: 100%;
+    resize: vertical;
+}

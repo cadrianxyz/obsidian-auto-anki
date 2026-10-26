@@ -27,9 +27,7 @@
 	},
 	"dependencies": {
 		"marked": "^18.1.1",
-		"openai": "6.39.1",
-		"winston": "^3.11.0",
-		"winston-transport": "^4.6.0"
+		"openai": "6.39.1"
 	},
 	"repository": {
 		"type": "git",

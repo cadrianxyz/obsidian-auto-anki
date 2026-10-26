@@ -12,6 +12,7 @@ export const fake = {
 	ankiHandler: null,
 	providerRequests: [],
 	providerHandler: null,
+	attachmentReads: [],
 	reset() {
 		this.notices.length = 0;
 		this.modals.length = 0;
@@ -19,6 +20,7 @@ export const fake = {
 		this.ankiHandler = null;
 		this.providerRequests.length = 0;
 		this.providerHandler = null;
+		this.attachmentReads.length = 0;
 	},
 };
 
@@ -107,6 +109,10 @@ class TextComponent extends ValueComponent {
 	constructor() { super(); this.inputEl = new FakeElement('input'); }
 }
 
+class TextAreaComponent extends ValueComponent {
+	constructor() { super(); this.inputEl = new FakeElement('textarea'); }
+}
+
 class DropdownComponent extends ValueComponent {
 	constructor() { super(); this.options = {}; }
 	addOption(value, label) { this.options[value] = label; return this; }
@@ -141,6 +147,7 @@ export class Setting {
 	setHeading() { this.heading = true; return this; }
 	add(component, cb) { this.components.push(component); cb(component); return this; }
 	addText(cb) { return this.add(new TextComponent(), cb); }
+	addTextArea(cb) { return this.add(new TextAreaComponent(), cb); }
 	addSearch(cb) { return this.add(new TextComponent(), cb); }
 	addExtraButton(cb) { return this.add(new ExtraButtonComponent(), cb); }
 	addDropdown(cb) { return this.add(new DropdownComponent(), cb); }
@@ -246,7 +253,8 @@ export class PluginSettingTab {
 				}
 				const control = definition.control;
 				if (!control) continue;
-				const component = control.type === 'dropdown' ? new DropdownComponent() : new TextComponent();
+				const component = control.type === 'dropdown' ? new DropdownComponent() : control.type === 'textarea' ? new TextAreaComponent() : new TextComponent();
+				if (control.type === 'textarea') component.inputEl.rows = control.rows;
 				if (control.options) for (const [key, label] of Object.entries(control.options)) component.addOption(key, label);
 				component.setValue(this.getControlValue(control.key) ?? control.defaultValue);
 				component.setDisabled(evaluate(control.disabled) ?? false);
@@ -286,6 +294,9 @@ export class Modal {
 export class MarkdownView {}
 export class Editor {}
 export class App {}
+
+export function arrayBufferToBase64(bytes) { return Buffer.from(bytes).toString('base64'); }
+export function parseLinktext(text) { return { path: text.split('#')[0], subpath: text.includes('#') ? `#${text.split('#').slice(1).join('#')}` : '' }; }
 
 export function setIcon(el, icon) { el.icon = icon; }
 

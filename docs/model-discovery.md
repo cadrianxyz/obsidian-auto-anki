@@ -1,4 +1,4 @@
-# Choosing a provider and model
+# Setting up card generation
 
 Auto Anki uses an AI service to turn your notes into flashcards. The service,
 such as OpenAI or Claude, is the **provider**. The **model** is the particular AI
@@ -6,8 +6,9 @@ you choose from that provider. Each model can keep its own settings.
 
 This guide describes the settings in the 1.0 development build. You can configure
 OpenAI and Claude, but card generation currently works through OpenAI. Claude
-generation, sending images and applying the output-mode override are still being
-implemented. Their saved settings will be used by the new generation workflow.
+generation and the broader Anki note-type workflow are still being implemented.
+The current export flow makes text question/answer cards. Diagrams can inform
+those cards; displaying images on cards and generating cloze cards come later.
 
 ## Set up a provider
 
@@ -63,6 +64,62 @@ Changing one model's settings leaves your other models' settings as they were.
 Saving a setting does not generate cards.
 **Output mode** and **Accepts images** are under the model's **Advanced** page;
 ordinary use can leave both at Auto.
+
+## Choose how your cards are written
+
+Open **Settings → Auto Anki → Cards**. These preferences are shared by your
+models and used by the export commands. Set them once, then generate cards
+from a note or a selection.
+
+- **Send diagrams** includes supported images embedded in the note when the
+  selected model accepts images. It starts on. Only vault attachments are sent;
+  web images are skipped. Images are resized locally before sending. GIFs are
+  analysed using their first frame, and the original file is left unchanged.
+- **Coverage** controls how much detail to turn into cards. Choose **Key ideas
+  only**, **Main ideas and important details** (the default), or **Everything
+  worth remembering**. More detail usually means more cards.
+- **Extra instructions** adds standing preferences such as “Use British
+  spelling.” Use headings, lists and multiple lines of Markdown. Your text is
+  saved exactly as typed, including spaces and blank lines.
+
+Under **Cards → Advanced**, **Card-writing instructions** shows the built-in
+guidance for writing focused, accurate cards. Editing it replaces that guidance;
+the response-format rules needed by Auto Anki are separate and cannot be edited
+here. For small preferences, use Extra instructions to keep receiving updates
+to the built-in guidance.
+
+Your edited guidance is kept through plugin updates. **Reset to default**
+discards that edit and returns to the current built-in guidance, including future
+improvements. Reset leaves your extra instructions, coverage and diagram
+preference unchanged. You can edit these preferences before adding an API key;
+opening the page or saving an edit makes no AI request.
+
+## Generate and review cards
+
+Open a note and run **Auto Anki: Export current file to Anki** from Obsidian's
+command palette. To use only part of the note, select it and run **Auto Anki:
+Export highlighted text to Anki**. Anki and AnkiConnect must be running.
+
+The dialog shows your selected model, which material will be sent, and any
+diagrams that must be skipped. Frontmatter and Obsidian comments are excluded.
+For a selection, only images embedded in that selection are included.
+
+**Coverage** starts with your saved choice. Changing it here affects this run
+only. Under **Advanced**, **Maximum cards** is an optional ceiling, not a target.
+It starts empty for a whole note and at three for a selection. **Instructions
+for this run** adds one-off guidance after your saved extra instructions; it is
+not saved. Both instruction editors preserve multiline Markdown.
+
+Click **Generate cards** to send the request. Review the resulting text cards,
+select the ones to keep, then choose an existing Anki deck and export. Suspected
+mistakes in the source and skipped content are shown alongside the cards, even
+when no cards can be generated. The plugin does not change your source note.
+
+Auto Anki asks for structured card data. In **Auto** output mode, an explicit
+unsupported-format error allows it to try a compatible format and remember the
+one that worked. Ordinary generation does not run a separate capability test.
+Authentication errors, rate limits, refusals and malformed replies do not trigger
+another generation request automatically.
 
 ## Where the model choices come from
 

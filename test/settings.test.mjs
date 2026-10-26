@@ -678,7 +678,7 @@ describe('native provider and model settings', () => {
 		const plugin = await loadPlugin(makeDevice({ disk: makeDisk(configured()), keychain: makeKeychain('ok', { [SECRET_ID]: KEY, [CLAUDE_SECRET]: KEY }) }));
 		await plugin.configureModel('openai', 'changed-after-startup', true);
 		run(plugin, 'export-current-file-to-anki');
-		assert.equal(fake.modals.at(-1).model, 'changed-after-startup');
+		assert.equal(fake.modals.at(-1).model.id, 'changed-after-startup');
 		await fake.modals.at(-1).opened;
 		const count = fake.modals.length;
 		await plugin.configureModel('anthropic', 'claude-model', true);

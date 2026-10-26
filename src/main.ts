@@ -4,8 +4,8 @@ import { ModelCatalogCacheFile } from './ai/model-catalog-cache';
 import { PROVIDER_PRESETS, type ProviderId } from './ai/presets';
 import { AutoAnkiSettingTab } from './settings-tab';
 import { SettingsStore } from './settings/store';
-import { createModelSettings, type SettingsV1 } from './settings/model';
-import { DEFAULT_SETTINGS, type GenerationOptions } from './settings';
+import { createModelSettings, normalizeSettings, type SettingsV1 } from './settings/model';
+import type { SourceNote } from './note/read';
 import { ExportModal } from './modal';
 import { getProviderApiKey, setProviderApiKey, type KeyMigrationResult } from './utils/api-key';
 import type { StatusBarElement } from './utils/cusom-types';
@@ -37,18 +37,18 @@ export default class AutoAnkiPlugin extends Plugin {
 				if (!view) return false;
 				if (!checking) {
 					if (!view.data.length) { new Notice('There is nothing in the file!'); return; }
-					this.openExport(view.data, false);
+					this.openExport(view.data, false, view.file?.path, view.file?.basename);
 				}
 				return true;
 			},
 		});
 		this.addCommand({
 			id: 'export-text-selection-to-anki', name: 'Export highlighted text to Anki',
-			editorCheckCallback: (checking: boolean, editor: Editor) => {
+			editorCheckCallback: (checking: boolean, editor: Editor, view) => {
 				if (!checking) {
 					const text = editor.getSelection();
 					if (!text.length) { new Notice('No text was selected!'); return; }
-					this.openExport(text, true);
+					this.openExport(text, true, view.file?.path, view.file?.basename);
 				}
 				return true;
 			},
@@ -144,7 +144,7 @@ export default class AutoAnkiPlugin extends Plugin {
 		});
 	}
 
-	private openExport(text: string, selection: boolean): void {
+	private openExport(text: string, selection: boolean, path = '', title = 'Untitled note'): void {
 		const reference = this.settings.defaultModel;
 		if (!reference) { new Notice('Choose a default model in the Auto Anki settings first.'); return; }
 		const key = getProviderApiKey(this.app, reference.providerId);
@@ -160,13 +160,22 @@ export default class AutoAnkiPlugin extends Plugin {
 		}
 		const model = this.settings.providers.openai.models.find(model => model.id === reference.modelId);
 		if (!model?.enabled) return;
-		const defaults = selection ? DEFAULT_SETTINGS.questionGenerationDefaults.textSelection : DEFAULT_SETTINGS.questionGenerationDefaults.file;
-		new ExportModal(this.app, this.statusBar, text, key, model.id, this.settings.anki.url,
-			this.settings.anki.deckTemplate,
-			// The legacy SDK type is narrower than provider-reported levels; it is replaced
-			// by the protocol adapters in the AI-layer milestone.
-			{ reasoningEffort: model.reasoningEffort as GenerationOptions['reasoningEffort'], maxOutputTokens: model.maxOutputTokens },
-			defaults.numQuestions, defaults.numAlternatives).open();
+		// An open dialog keeps its own snapshot. A sync or settings edit must not change
+		// the source, instructions or model halfway through a generation/review cycle.
+		const snapshot = normalizeSettings(this.settings);
+		const selectedModel = snapshot.providers.openai.models.find(saved => saved.id === model.id)!;
+		const discovered = this.discovery.getModels('openai', snapshot.providers.openai.models).find(known => known.id === model.id);
+		if (discovered?.capabilities) selectedModel.capabilities = discovered.capabilities;
+		const source: SourceNote = { markdown: text, path, title };
+		new ExportModal(this.app, this.statusBar, source, key, selectedModel,
+			snapshot.anki.url, snapshot.anki.deckTemplate, snapshot.cards, selection, async mode => {
+				const current = this.settings.providers.openai.models.find(saved => saved.id === model.id);
+				if (!current || current.capabilities?.outputMode === mode) return;
+				await this.updateSettings(settings => {
+					const saved = settings.providers.openai.models.find(saved => saved.id === model.id);
+					if (saved) saved.capabilities = { ...saved.capabilities, outputMode: mode };
+				}, false);
+			}).open();
 	}
 
 	private setupStatusBar(): void {

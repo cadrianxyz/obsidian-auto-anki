@@ -1,8 +1,9 @@
-import { PluginSettingTab, type App, type SettingDefinitionItem } from 'obsidian';
+import { PluginSettingTab, type App, type ButtonComponent, type SettingDefinitionItem } from 'obsidian';
 import type AutoAnkiPlugin from './main';
 import { PROVIDER_IDS, PROVIDER_PRESETS, type ProviderId } from './ai/presets';
 import { getReasoningEffortsForModel, OUTPUT_MODES, OutputMode } from './ai/model-info';
-import { createModelSettings, type ModelReference, type ModelSettings } from './settings/model';
+import { COVERAGE_LEVELS, createModelSettings, type CoverageLevel, type ModelReference, type ModelSettings } from './settings/model';
+import { CARD_WRITING_INSTRUCTIONS_VERSION, DEFAULT_CARD_WRITING_INSTRUCTIONS } from './generate/card-writing-instructions';
 import { getProviderApiKey, isKeychainAvailable, maskApiKey } from './utils/api-key';
 import { asRecord } from './utils/data';
 import { getPickerModels, sortModelChoices } from './ai/model-selection';
@@ -22,6 +23,7 @@ export class AutoAnkiSettingTab extends PluginSettingTab {
 	private readonly errors = new Map<ProviderId, string>();
 	private readonly refreshVersions = new Map<ProviderId, number>();
 	private readonly refreshTasks = new Map<ProviderId, Promise<void>>();
+	private resetInstructionsButton?: ButtonComponent;
 
 	constructor(app: App, private readonly plugin: AutoAnkiPlugin) {
 		super(app, plugin);
@@ -63,10 +65,17 @@ export class AutoAnkiSettingTab extends PluginSettingTab {
 			{ name: 'Default model', desc: 'Choose a starting model from your enabled models. Open a provider and use Add models to choose more.',
 				visible: () => Object.keys(choices).length > 1,
 				control: { type: 'dropdown', key: 'defaultModel', options: choices, disabled: () => !this.plugin.settingsStore.canSave } },
+			{ type: 'page', name: 'Cards', desc: 'Coverage, diagrams and instructions for writing your cards.', items: this.cardSettings() },
 		];
 	}
 
 	getControlValue(key: string): unknown {
+		switch (key) {
+			case 'cards.sendDiagrams': return this.plugin.settings.cards.sendDiagrams;
+			case 'cards.coverageLevel': return this.plugin.settings.cards.coverageLevel;
+			case 'cards.extraInstructions': return this.plugin.settings.cards.extraInstructions;
+			case 'cards.cardWritingInstructions': return this.plugin.settings.cards.cardWritingInstructions?.text ?? DEFAULT_CARD_WRITING_INSTRUCTIONS;
+		}
 		if (key === 'defaultModel') {
 			const selected = this.plugin.settings.defaultModel;
 			return selected && getProviderApiKey(this.app, selected.providerId) ? JSON.stringify(selected) : '';
@@ -77,6 +86,30 @@ export class AutoAnkiSettingTab extends PluginSettingTab {
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
+		switch (key) {
+			case 'cards.sendDiagrams':
+				if (typeof value === 'boolean') await this.plugin.updateSettings(settings => { settings.cards.sendDiagrams = value; }, false);
+				return;
+			case 'cards.coverageLevel':
+				if (COVERAGE_LEVELS.includes(value as CoverageLevel)) {
+					await this.plugin.updateSettings(settings => { settings.cards.coverageLevel = value as CoverageLevel; }, false);
+				}
+				return;
+			case 'cards.extraInstructions':
+				if (typeof value === 'string') await this.plugin.updateSettings(settings => { settings.cards.extraInstructions = value; }, false);
+				return;
+			case 'cards.cardWritingInstructions':
+				if (typeof value !== 'string') return;
+				await this.plugin.updateSettings(settings => {
+					const edited = settings.cards.cardWritingInstructions;
+					if (!edited && value === DEFAULT_CARD_WRITING_INSTRUCTIONS) return;
+					// Read the version inside the queued edit: rapid typing or a synced
+					// override must keep the version of the guidance the edit began with.
+					settings.cards.cardWritingInstructions = { text: value, defaultVersion: edited?.defaultVersion ?? CARD_WRITING_INSTRUCTIONS_VERSION };
+				}, false); // Keep the text area and cursor in place while typing.
+				this.resetInstructionsButton?.setDisabled(!this.plugin.settingsStore.canSave || !this.plugin.settings.cards.cardWritingInstructions);
+				return;
+		}
 		if (key === 'defaultModel') {
 			if (value === '') {
 				await this.plugin.updateSettings(settings => { settings.defaultModel = null; });
@@ -119,6 +152,41 @@ export class AutoAnkiSettingTab extends PluginSettingTab {
 	hide(): void {
 		super.hide();
 		this.openedProviders.clear();
+		this.resetInstructionsButton = undefined;
+	}
+
+	private cardSettings(): SettingDefinitionItem[] {
+		const disabled = () => !this.plugin.settingsStore.canSave;
+		return [
+			{ name: 'Send diagrams', desc: 'Include supported images embedded in the note when the selected model accepts images.',
+				control: { type: 'toggle', key: 'cards.sendDiagrams', disabled } },
+			{ name: 'Coverage', desc: 'Choose how much detail to turn into cards. More detail usually means more cards.',
+				control: { type: 'dropdown', key: 'cards.coverageLevel', disabled, options: {
+					'key-ideas': 'Key ideas only',
+					'main-ideas-and-details': 'Main ideas and important details',
+					'everything': 'Everything worth remembering',
+				} } },
+			{ type: 'group', cls: 'auto-anki-instructions', items: [
+				{ name: 'Extra instructions', desc: 'Preferences added to every run, such as "Use British spelling". Use Markdown and multiple lines; your spacing and line breaks are kept.',
+					control: { type: 'textarea', key: 'cards.extraInstructions', rows: 5, placeholder: 'Add your preferences here…', disabled } },
+			] },
+			{ type: 'page', name: 'Advanced', desc: 'Edit the guidance for writing cards, or reset it to the built-in version.', items: [
+				{ type: 'group', cls: 'auto-anki-instructions', items: [
+					{ name: 'Card-writing instructions', desc: 'Editing replaces the built-in writing guidance and keeps your version through updates. For small additions, use Extra instructions instead. Required response-format rules are separate and cannot be edited here.',
+						control: { type: 'textarea', key: 'cards.cardWritingInstructions', rows: 18, disabled } },
+				] },
+				{ name: 'Built-in guidance', desc: 'Reset discards your edited guidance and follows the current built-in instructions, including future improvements.', render: setting => {
+					setting.addButton(button => {
+						this.resetInstructionsButton = button;
+						button.setButtonText('Reset to default').setDisabled(disabled() || !this.plugin.settings.cards.cardWritingInstructions)
+							.onClick(async () => {
+								button.setDisabled(true);
+								await this.plugin.updateSettings(settings => { delete settings.cards.cardWritingInstructions; });
+							});
+					});
+				} },
+			] },
+		];
 	}
 
 	private providerSettings(providerId: ProviderId): SettingDefinitionItem[] {

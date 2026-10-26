@@ -1,6 +1,6 @@
 import { Notice, requestUrl } from 'obsidian';
 
-import { CardInformation } from './gpt';
+import type { CardInformation } from '../generate/result';
 
 const ANKI_VERSION = 6;
 // const ANKI_DEFAULT_DECK = 'Default';
@@ -52,6 +52,13 @@ interface AddCardsOutcome {
     errors: string[];
 }
 
+// This export path handles text cards. Preserve literal comparisons/code instead
+// of allowing Anki to interpret generated text as raw HTML. Rich Markdown/math
+// rendering belongs to the forthcoming Anki renderer.
+function textField(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r?\n/g, '<br>');
+}
+
 // One addNote per card inside a single `multi` request, so every card gets its own
 // result. With addNotes, a refused card is either counted as exported (older
 // AnkiConnect) or fails the whole batch (newer AnkiConnect).
@@ -66,8 +73,8 @@ async function addCardsToAnki(ankiPort: number | string, deck: string, data: Car
                 'deckName': deck,
                 'modelName': 'Basic',
                 'fields': {
-                    'Front': card.q,
-                    'Back': card.a,
+                    'Front': textField(card.q),
+                    'Back': textField(card.a),
                 },
                 'tags': [
                     'auto-gpt-imported'

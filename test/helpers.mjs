@@ -73,7 +73,8 @@ export function makeEditor(selection) {
 
 // ---- A device: an Obsidian app with this vault open ----
 
-export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activeNote = 'Some note text.', pluginDirectory = MANIFEST.dir } = {}) {
+export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activeNote = 'Some note text.', pluginDirectory = MANIFEST.dir,
+	notePath = 'Notes/Example.md', attachments = {} } = {}) {
 	const cachePath = `${pluginDirectory}/model-catalog-cache.json`;
 	const adapter = readOnly('vault.adapter', ['append', 'remove', 'rename', 'writeBinary', 'process'], {
 		async read(path) {
@@ -89,11 +90,23 @@ export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activ
 	});
 	const app = {
 		disk,
-		vault: readOnly('vault', NOTE_WRITERS, { adapter }),
+		vault: readOnly('vault', NOTE_WRITERS, { adapter,
+			async readBinary(file) {
+				fake.attachmentReads.push(file.path);
+				if (!(file.path in attachments)) throw new Error('Attachment missing');
+				return attachments[file.path];
+			},
+		}),
+		metadataCache: { getFirstLinkpathDest(link, sourcePath) {
+			const folder = sourcePath.slice(0, sourcePath.lastIndexOf('/') + 1);
+			const path = [link, `${folder}${link}`, ...Object.keys(attachments).filter(path => path.endsWith(`/${link}`))].find(path => path in attachments);
+			return path ? { path, extension: path.split('.').at(-1), basename: path.split('/').at(-1).replace(/\.[^.]+$/, '') } : null;
+		} },
 		workspace: {
 			activeNote,
+			file: { path: notePath, basename: notePath.split('/').at(-1).replace(/\.[^.]+$/, '') },
 			getActiveViewOfType() {
-				return this.activeNote === null ? null : { data: this.activeNote, editor: makeEditor('') };
+				return this.activeNote === null ? null : { data: this.activeNote, editor: makeEditor(''), file: this.file };
 			},
 		},
 	};
@@ -136,7 +149,7 @@ export function isOffered(plugin, id, selection = 'selected text') {
 export function run(plugin, id, selection = 'selected text') {
 	const cmd = command(plugin, id);
 	if (cmd.checkCallback) return cmd.checkCallback(false);
-	return cmd.editorCheckCallback(false, makeEditor(selection), {});
+	return cmd.editorCheckCallback(false, makeEditor(selection), { file: plugin.app.workspace.file });
 }
 
 // ---- Data.json shapes written by earlier versions ----
@@ -168,7 +181,9 @@ export function completion(...choices) {
 			choices: choices.map((cards, index) => ({
 				index,
 				finish_reason: 'stop',
-				message: { role: 'assistant', content: typeof cards === 'string' ? cards : JSON.stringify({ questions_answers: cards }) },
+				message: { role: 'assistant', content: typeof cards === 'string' ? cards : JSON.stringify({
+					cards: cards.map(card => card && typeof card === 'object' && 'q' in card ? { type: 'basic', front: card.q, back: card.a } : card), note_issues: [],
+				}) },
 			})),
 		},
 	};
