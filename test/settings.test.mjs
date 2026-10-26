@@ -683,8 +683,10 @@ describe('native provider and model settings', () => {
 		const count = fake.modals.length;
 		await plugin.configureModel('anthropic', 'claude-model', true);
 		run(plugin, 'export-current-file-to-anki');
-		assert.equal(fake.modals.length, count);
-		assert.match(fake.notices.at(-1), /Claude generation is not available/);
+		assert.equal(fake.modals.length, count + 1);
+		assert.equal(fake.modals.at(-1).providerId, 'anthropic');
+		assert.equal(fake.modals.at(-1).model.id, 'claude-model');
+		await fake.modals.at(-1).opened;
 	});
 });
 

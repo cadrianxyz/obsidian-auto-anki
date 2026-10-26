@@ -23,6 +23,13 @@ export interface ModelCapabilities {
 	reasoningEfforts?: ModelReasoningEffort[];
 }
 
+/** Both protocols use the same order; an explicit user choice permits no format fallback. */
+export function getGenerationOutputModes(model: { outputMode: OutputMode; capabilities?: ModelCapabilities }): readonly ResolvedOutputMode[] {
+	if (model.outputMode !== OutputMode.Auto) return [model.outputMode];
+	const initial = model.capabilities?.outputMode ?? OutputMode.JsonSchema;
+	return RESOLVED_OUTPUT_MODES.slice(RESOLVED_OUTPUT_MODES.indexOf(initial));
+}
+
 /** Shared model information used by discovery, catalogue hints and settings. No HTTP calls here. */
 export interface ProviderModelInfo {
 	id: string;

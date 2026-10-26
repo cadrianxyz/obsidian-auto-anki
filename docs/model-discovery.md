@@ -4,9 +4,9 @@ Auto Anki uses an AI service to turn your notes into flashcards. The service,
 such as OpenAI or Claude, is the **provider**. The **model** is the particular AI
 you choose from that provider. Each model can keep its own settings.
 
-This guide describes the settings in the 1.0 development build. You can configure
-OpenAI and Claude, but card generation currently works through OpenAI. Claude
-generation and the broader Anki note-type workflow are still being implemented.
+This guide describes the settings in the 1.0 development build. OpenAI and Claude
+both generate cards through the same dialog and use your saved Cards preferences.
+The broader Anki note-type workflow is still being implemented.
 The current export flow makes text question/answer cards. Diagrams can inform
 those cards; displaying images on cards and generating cloze cards come later.
 
@@ -120,6 +120,13 @@ unsupported-format error allows it to try a compatible format and remember the
 one that worked. Ordinary generation does not run a separate capability test.
 Authentication errors, rate limits, refusals and malformed replies do not trigger
 another generation request automatically.
+
+Claude uses native structured output when available. Its fallback formats are a
+named function response, then a JSON instruction; no function is executed.
+Reasoning effort uses the model's own default unless you choose a level. Closing
+a Claude generation dialog stops waiting for the response and prevents a late
+reply from opening the review screen. A request already received by the provider
+may still finish and be billed.
 
 ## Where the model choices come from
 

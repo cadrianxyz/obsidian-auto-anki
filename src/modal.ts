@@ -1,6 +1,7 @@
 import { Modal, Notice, Setting, type App, type ButtonComponent } from 'obsidian';
 import type { ModelSettings, SettingsV1 } from './settings/model';
 import { OutputMode, type ResolvedOutputMode } from './ai/model-info';
+import { PROVIDER_PRESETS, type ProviderId } from './ai/presets';
 import { COVERAGE_LABELS, type RunPreferences } from './generate/prompt';
 import { generateCards } from './generate/run';
 import type { CardInformation, GenerationResult } from './generate/result';
@@ -39,6 +40,7 @@ export class ExportModal extends Modal {
 		private readonly statusBar: StatusBarElement,
 		private readonly source: SourceNote,
 		private readonly apiKey: string,
+		private readonly providerId: ProviderId,
 		private readonly model: ModelSettings,
 		private readonly address: string,
 		private readonly deck: string,
@@ -60,7 +62,7 @@ export class ExportModal extends Modal {
 		if (this.closed) return;
 		this.statusBar.doReset?.();
 		const status = this.contentEl.createEl('p', { text: 'Preparing the note and diagrams…', attr: { role: 'status' } });
-		this.contentEl.createEl('p', { text: `Model: ${this.model.id}. Cards are generated as text questions and answers. Diagrams provide source material for those answers.` });
+		this.contentEl.createEl('p', { text: `Model: ${PROVIDER_PRESETS[this.providerId].name} · ${this.model.id}. Cards are generated as text questions and answers. Diagrams provide source material for those answers.` });
 		new Setting(this.contentEl).setName('Coverage').setDesc('Choose how much detail to turn into cards. This choice applies to this run only.')
 			.addDropdown(dropdown => {
 				this.controls.push(dropdown);
@@ -104,7 +106,7 @@ export class ExportModal extends Modal {
 		this.generateButton?.setDisabled(true).setButtonText('Generating…');
 		this.statusBar.doDisplayRunning?.();
 		try {
-			const result = await generateCards(this.apiKey, this.model, this.cards, this.run, this.source, this.diagrams, this.controller.signal);
+			const result = await generateCards(this.providerId, this.apiKey, this.model, this.cards, this.run, this.source, this.diagrams, this.controller.signal);
 			if (this.closed) return;
 			if (this.model.outputMode === OutputMode.Auto) await this.rememberOutputMode(result.outputMode);
 			if (this.closed) return;

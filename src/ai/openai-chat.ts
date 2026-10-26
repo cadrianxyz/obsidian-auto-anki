@@ -1,12 +1,11 @@
 import OpenAI from 'openai';
 import type { ChatCompletionCreateParamsNonStreaming, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { OutputMode, type ResolvedOutputMode } from './model-info';
+import { getGenerationOutputModes, OutputMode, type ResolvedOutputMode } from './model-info';
 import type { ModelSettings } from '../settings/model';
 import type { GenerationPrompt } from '../generate/prompt';
 import { CARD_RESPONSE_SCHEMA } from '../generate/result';
 
 const RESPONSE_TOOL = 'submit_cards';
-const OUTPUT_LADDER = [OutputMode.JsonSchema, OutputMode.Tool, OutputMode.Json] as const;
 
 /** Keep this separate from writing guidance: transport details are never editable prompt text. */
 function requestBody(model: ModelSettings, prompt: GenerationPrompt, mode: ResolvedOutputMode): ChatCompletionCreateParamsNonStreaming {
@@ -61,8 +60,7 @@ export async function requestOpenAiCards(apiKey: string, model: ModelSettings, p
 	// Retries here are limited to recognised format errors. An ambiguous network failure
 	// must not silently send the same generation a second time.
 	const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 0 });
-	const initial = model.outputMode === OutputMode.Auto ? model.capabilities?.outputMode ?? OutputMode.JsonSchema : model.outputMode;
-	const modes = model.outputMode === OutputMode.Auto ? OUTPUT_LADDER.slice(OUTPUT_LADDER.indexOf(initial)) : [initial];
+	const modes = getGenerationOutputModes(model);
 	for (const [index, mode] of modes.entries()) {
 		try {
 			const response = await client.chat.completions.create(requestBody(model, prompt, mode), { signal });

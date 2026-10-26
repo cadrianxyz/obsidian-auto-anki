@@ -152,27 +152,22 @@ export default class AutoAnkiPlugin extends Plugin {
 			new Notice(`No ${PROVIDER_PRESETS[reference.providerId].name} API key on this device. Add one in the Auto Anki settings. Keys stay in this device’s Keychain.`);
 			return;
 		}
-		// The existing export flow remains OpenAI-only until both protocol adapters and
-		// the new review dialog are built. Never send a Claude selection to OpenAI.
-		if (reference.providerId !== 'openai') {
-			new Notice('Claude generation is not available in this development build yet.');
-			return;
-		}
-		const model = this.settings.providers.openai.models.find(model => model.id === reference.modelId);
+		const providerId = reference.providerId;
+		const model = this.settings.providers[providerId].models.find(model => model.id === reference.modelId);
 		if (!model?.enabled) return;
 		// An open dialog keeps its own snapshot. A sync or settings edit must not change
 		// the source, instructions or model halfway through a generation/review cycle.
 		const snapshot = normalizeSettings(this.settings);
-		const selectedModel = snapshot.providers.openai.models.find(saved => saved.id === model.id)!;
-		const discovered = this.discovery.getModels('openai', snapshot.providers.openai.models).find(known => known.id === model.id);
+		const selectedModel = snapshot.providers[providerId].models.find(saved => saved.id === model.id)!;
+		const discovered = this.discovery.getModels(providerId, snapshot.providers[providerId].models).find(known => known.id === model.id);
 		if (discovered?.capabilities) selectedModel.capabilities = discovered.capabilities;
 		const source: SourceNote = { markdown: text, path, title };
-		new ExportModal(this.app, this.statusBar, source, key, selectedModel,
+		new ExportModal(this.app, this.statusBar, source, key, providerId, selectedModel,
 			snapshot.anki.url, snapshot.anki.deckTemplate, snapshot.cards, selection, async mode => {
-				const current = this.settings.providers.openai.models.find(saved => saved.id === model.id);
+				const current = this.settings.providers[providerId].models.find(saved => saved.id === model.id);
 				if (!current || current.capabilities?.outputMode === mode) return;
 				await this.updateSettings(settings => {
-					const saved = settings.providers.openai.models.find(saved => saved.id === model.id);
+					const saved = settings.providers[providerId].models.find(saved => saved.id === model.id);
 					if (saved) saved.capabilities = { ...saved.capabilities, outputMode: mode };
 				}, false);
 			}).open();
