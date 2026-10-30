@@ -1,8 +1,10 @@
 # Obsidian Auto Anki
 
-Plugin for [Obsidian.md](https://obsidian.md/) that uses OpenAI's GPT LLM to automatically generate Flashcards for Anki.
+Plugin for [Obsidian.md](https://obsidian.md/) that uses OpenAI or Claude to generate Anki notes from your Obsidian notes. Anki uses each note’s templates to create one or more flashcards.
 
 > The plugin **only works for desktop**.
+
+> **1.0 development build:** the requirements and setup below describe the current development version. See the [detailed setup guide](docs/model-discovery.md) for provider, model, generation and note-type settings. The screenshots in Feature Details still show the older 0.3 interface.
 
 The plugin introduces two new "commands" into obsidian:
 - _Export current file to Anki_
@@ -21,8 +23,8 @@ The two new commands look like the following:
 ## Plugin Requirements
 
 The following are required for the Plugin to work:
-- Obsidian 1.11.4 or newer, on desktop (older Obsidian versions get Auto Anki 0.2.2)
-- An [OpenAI](https://openai.com/) Account and an [OpenAI API Key](https://platform.openai.com/account/api-keys)
+- Obsidian 1.13.1 or newer, on desktop
+- An API account and key for [OpenAI](https://platform.openai.com/api-keys) or [Claude](https://platform.claude.com/). API usage is billed by the provider; a ChatGPT or Claude chat subscription is not a substitute for API access
 - The [Anki](https://apps.ankiweb.net/) program, installed locally
 - [Anki Connect](https://github.com/FooSoft/anki-connect), to expose an Anki API for Obsidian to make calls to
 
@@ -30,13 +32,16 @@ The following are required for the Plugin to work:
 
 1. Download and install the plugin (Options > Community Plugins)
 2. Ensure that you have all the requirements in the [Plugin Requirements](#plugin-requirements)
-3. Go to the Plugin Settings (Settings > Community Plugins > Auto Anki) and make sure to set the following fields appropriately:
-    - Anki port (by default, this is `8765`)
-    - OpenAI API key. It is saved in Obsidian's Keychain on this device (you'll see it under Settings > Keychain as `auto-anki-openai-api-key`), not in your vault. Obsidian encrypts Keychain secrets with your operating system's secret store when one is available (Settings > Keychain says if it isn't). The Keychain doesn't sync, so each device you use Auto Anki on needs the key entered once
-    - OpenAI model (by default, `gpt-6-luna`). Any OpenAI chat model your API key can use works
-4. Enjoy!
+3. Open **Settings → Auto Anki**. Under **AI providers**, choose **OpenAI** or **Claude**, enter that provider's API key and click **Save key**.
+4. On the provider's page, open **Manage models** (the `settings-2` button beside **Your models**). Toggle models on or off, then click **Save changes**; **Cancel** discards the staged changes. Disabled models keep their preferences but disappear from **Your models**, provider individual-settings entries and the picker; re-enable them through the same modal. If no default exists, the first model you enable becomes the default. Disabling the current default shows a warning and clears it without choosing a replacement, even if you enable other models in the same save. With a saved provider key, choose **Use as default model** on a model's page or **Default model** on the main settings page to select a default. Models must support text generation through OpenAI's Responses API or Claude's Messages API; known non-text models cannot be enabled, but existing ones can be disabled. Appearing in the provider list alone does not guarantee compatibility. **Manage models** remains available without a key when configured models exist; discovering provider models still requires a key.
+5. Start Anki with AnkiConnect enabled, then open **Settings → Auto Anki → Anki**:
+    - Set **AnkiConnect address** if needed. The default is `http://127.0.0.1:8765`—a full address, not just a port.
+    - Under **Note types**, enable the existing Anki types the AI may generate. Use **Refresh note types** after changing the address or your types in Anki. The AI fills their fields using the definitions from Anki; no field mappings are needed.
+6. Open **Generation** to adjust coverage, diagrams and writing instructions, then use an export command to generate and review notes.
 
-> **Upgrading from 0.2.1:** 0.2.1 always used `gpt-3.5-turbo-1106`, which OpenAI shut down on 28 September 2026, so it can no longer generate cards. From 0.2.2 the model is a setting; your other settings carry over unchanged.
+API keys are saved in Obsidian's Keychain on this device, not in your vault. The Keychain does not sync, so enter your provider keys once on each device. Obsidian encrypts Keychain secrets using the operating system's secret store when available; **Settings → Keychain** reports when it is unavailable.
+
+> **Upgrading from 0.2.1:** 0.2.1 always used `gpt-3.5-turbo-1106`, which OpenAI shut down on 28 September 2026, so it can no longer generate Anki notes. From 0.2.2 the model is a setting; your other settings carry over unchanged.
 
 > **Upgrading to 0.3.0:** earlier versions stored your OpenAI API key in plain text in the plugin's `data.json`, inside your vault, so anything that copies your vault (sync, backups, git) copied the key too. 0.3.0 moves it into Obsidian's Keychain automatically the first time it loads, removes it from `data.json`, and shows a notice when it has. Older copies of your vault may still contain the key, so consider replacing it at OpenAI. On any other device where you use the same vault, enter the key once in the Auto Anki settings. If one of those devices has an Obsidian older than 1.11.4, it stays on 0.2.2, which only reads the key from `data.json`: update Obsidian there too, or that device will keep asking for the key.
 
@@ -58,7 +63,7 @@ From the generated list of "questions and answers", you have the option to pick 
 After picking and choosing, your selected "questions and answers" automatically imports the chosen questions to Anki, based on the details in your Plugin settings.
 
 > It may take a while if you are generating a large number of questions, or a large number of question alternatives.
-An indicator will show whether `auto-anki` is currently generating your flash cards. This is shown in the status bar at the bottom of the screen, like below:
+An indicator will show whether `auto-anki` is currently generating your Anki notes. This is shown in the status bar at the bottom of the screen, like below:
 
 ![status-bar-running](media/status-bar-running.png)
 
@@ -89,7 +94,7 @@ npm run lint    # checks the code with ESLint, including Obsidian's own plugin-r
 npm test        # runs the tests
 ```
 
-The tests (in `test/`) load the plugin in Node against a stand-in for Obsidian, with a fake Keychain, a fake OpenAI and a fake AnkiConnect, so they need no vault, no API key and no Anki. They cover moving the API key out of `data.json` (including synced vaults and a Keychain that fails), reading settings saved by every earlier version, and the export flow with its error messages. They also check that notes are never changed and that Anki is only ever asked to add cards. The release workflow runs them before building.
+The tests (in `test/`) load the plugin in Node against a stand-in for Obsidian, with a fake Keychain, fake OpenAI and Claude APIs and a fake AnkiConnect, so they need no vault, no API key and no Anki. They cover moving the API key out of `data.json` (including synced vaults and a Keychain that fails), reading settings saved by every earlier version, and the export flow with its error messages. They also check that source notes are never changed and that Anki is only ever asked to add notes. The release workflow runs them before building.
 
 To test in a vault, point `OBSIDIAN_PLUGIN_DIR` at the plugin's folder inside that vault. Every build is then copied there (`main.js`, `manifest.json`, `styles.css`):
 

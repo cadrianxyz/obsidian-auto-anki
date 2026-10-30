@@ -1,9 +1,9 @@
 // Shared set-up for the tests: fake "devices" (an Obsidian app with its own Keychain),
 // a shared vault disk (data.json), and fake OpenAI and AnkiConnect servers.
 import { fake } from 'obsidian';
-// Must come before the plugin: version 4 of the OpenAI SDK keeps whichever fetch exists
+// Must come before the plugin: the SDKs may keep whichever fetch exists
 // when it first loads.
-import { openai } from './fake-openai.mjs';
+import { openai } from './fake-fetch.mjs';
 import AutoAnkiPlugin from '../src/main';
 
 export { openai };
@@ -170,21 +170,34 @@ export const DATA_0_2_2 = Object.freeze({ ...DATA_0_2_1, openAiModel: 'gpt-6-lun
 // A 0.2.x install where no key was ever entered.
 export const DATA_NO_KEY = Object.freeze({ ...DATA_0_2_1, openAiApiKey: null, openAiApiKeyIdentifier: '' });
 
-// A successful chat completion, one choice per list of cards.
-export function completion(...choices) {
+export function generatedNote(value) {
+	if (!value || typeof value !== 'object' || value.noteType) return value;
+	if ('q' in value) return { noteType: 'Basic', fields: { Front: value.q, Back: value.a } };
+	if (value.type === 'basic') return { noteType: 'Basic', fields: { Front: value.front, Back: value.back } };
+	if (value.type === 'cloze') return { noteType: 'Cloze', fields: { Text: value.front, 'Back Extra': value.back } };
+	return value;
+}
+
+export const BASIC_DESTINATIONS = { url: 'http://127.0.0.1:8765', problems: [], types: [{ name: 'Basic', id: 100, fields: ['Front', 'Back'], descriptions: {}, templates: [{ name: 'Card 1', front: '{{Front}}', back: '{{Back}}' }] }] };
+
+// A completed Responses API reply whose final message holds the generated notes,
+// or the given text verbatim.
+export function openAiReply(notes) {
 	return {
 		json: {
-			id: 'chatcmpl-test',
-			object: 'chat.completion',
-			created: 0,
+			id: 'resp_test',
+			object: 'response',
+			created_at: 0,
 			model: 'test-model',
-			choices: choices.map((cards, index) => ({
-				index,
-				finish_reason: 'stop',
-				message: { role: 'assistant', content: typeof cards === 'string' ? cards : JSON.stringify({
-					cards: cards.map(card => card && typeof card === 'object' && 'q' in card ? { type: 'basic', front: card.q, back: card.a } : card), note_issues: [],
-				}) },
-			})),
+			status: 'completed',
+			error: null,
+			incomplete_details: null,
+			output: [{
+				type: 'message', id: 'msg_test', role: 'assistant', status: 'completed',
+				content: [{ type: 'output_text', annotations: [], text: typeof notes === 'string' ? notes : JSON.stringify({
+					notes: notes.map(note => generatedNote(note)), note_issues: [],
+				}) }],
+			}],
 		},
 	};
 }
@@ -194,12 +207,24 @@ export function openAiError(status, message, code) {
 }
 
 // ---- Fake AnkiConnect ----
-// Answers like AnkiConnect 6: deckNames, and multi with one addNote per card.
+// Answers like AnkiConnect 6: deckNames, and multi with one addNote per note.
 
-export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null, multiResult } = {}) {
+export const BASIC_NOTE_TYPE = { id: 100, fields: ['Front', 'Back'], descriptions: ['', ''], templates: { 'Card 1': { Front: '{{Front}}', Back: '{{FrontSide}}\n<hr id=answer>\n{{Back}}' } } };
+export const CLOZE_NOTE_TYPE = { id: 200, fields: ['Text', 'Back Extra'], descriptions: ['', ''], templates: { Cloze: { Front: '{{cloze:Text}}', Back: '{{cloze:Text}}<br>{{Back Extra}}' } } };
+
+export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null, multiResult, noteTypes = { Basic: BASIC_NOTE_TYPE } } = {}) {
 	const added = [];
+	const types = structuredClone(noteTypes);
 	fake.ankiHandler = (body) => {
 		if (body.action === 'deckNames') return { json: { result: decks, error: null } };
+		if (body.action === 'modelNamesAndIds') return { json: { result: Object.fromEntries(Object.entries(types).map(([name, type]) => [name, type.id])), error: null } };
+		if (body.action === 'modelNames') return { json: { result: Object.keys(types), error: null } };
+		if (['modelFieldNames', 'modelTemplates', 'modelFieldDescriptions'].includes(body.action)) {
+			const type = types[body.params.modelName];
+			if (!type) return { json: { result: null, error: `model was not found: ${body.params.modelName}` } };
+			return { json: { result: body.action === 'modelFieldNames' ? type.fields : body.action === 'modelTemplates' ? type.templates : type.descriptions ?? [], error: null } };
+		}
+		if (body.action === 'canAddNotes') return { json: { result: body.params.notes.map(() => true), error: null } };
 		if (body.action === 'multi') {
 			if (multiResult) return { json: multiResult(body) };
 			const result = body.params.actions.map((a) => {
@@ -213,7 +238,7 @@ export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null
 		}
 		return { json: { result: null, error: `unsupported action ${body.action}` } };
 	};
-	return { added };
+	return { added, types };
 }
 
 // Every AnkiConnect action the plugin sent, sub-actions of `multi` included.

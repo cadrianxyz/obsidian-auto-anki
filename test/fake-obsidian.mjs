@@ -75,7 +75,7 @@ function applyOpts(el, opts) {
 }
 
 // Obsidian exposes window timers in its desktop renderer; Node supplies the test timers.
-globalThis.window = { setTimeout, clearTimeout };
+globalThis.window = { setTimeout, clearTimeout, fetch: (...args) => globalThis.fetch(...args) };
 globalThis.createEl = (tag, opts) => new FakeElement(tag, opts);
 globalThis.createDiv = (opts) => new FakeElement('div', opts);
 globalThis.createSpan = (opts) => new FakeElement('span', opts);
@@ -114,8 +114,18 @@ class TextAreaComponent extends ValueComponent {
 }
 
 class DropdownComponent extends ValueComponent {
-	constructor() { super(); this.options = {}; }
+	constructor() {
+		super();
+		this.options = {};
+		this.selectEl = new FakeElement('select');
+		this.selectEl.empty = () => {
+			FakeElement.prototype.empty.call(this.selectEl);
+			this.options = {};
+			this.value = '';
+		};
+	}
 	addOption(value, label) { this.options[value] = label; return this; }
+	addOptions(options) { Object.assign(this.options, options); return this; }
 }
 
 class ButtonComponent {
@@ -145,6 +155,7 @@ export class Setting {
 	setName(n) { this.name = n; return this; }
 	setDesc(d) { this.desc = typeof d === 'string' ? d : d.textContent; return this; }
 	setHeading() { this.heading = true; return this; }
+	setClass(cls) { this.settingEl.classList.add(cls); return this; }
 	add(component, cb) { this.components.push(component); cb(component); return this; }
 	addText(cb) { return this.add(new TextComponent(), cb); }
 	addTextArea(cb) { return this.add(new TextAreaComponent(), cb); }

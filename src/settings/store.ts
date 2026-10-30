@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 import { prepareSettings, settingsData, type PreparedSettings } from './migration';
-import { createDefaultSettings, normalizeSettings, type SettingsV1 } from './model';
+import { createDefaultSettings, type PluginSettings } from './schema';
 
 /**
  * Reads and saves the user's choices in data.json. For example, changing the model
@@ -14,7 +14,7 @@ export class SettingsStore {
 	private lastOperation: Promise<void> = Promise.resolve();
 	private readonly app: App;
 	private readonly readSettingsFile: () => Promise<unknown>;
-	private readonly writeSettingsFile: (value: SettingsV1) => Promise<void>;
+	private readonly writeSettingsFile: (value: PluginSettings) => Promise<void>;
 	/** Editing stays disabled until a successful load, to avoid overwriting unreadable settings. */
 	canSave = false;
 
@@ -22,7 +22,7 @@ export class SettingsStore {
 	constructor(
 		app: App,
 		readSettingsFile: () => Promise<unknown>,
-		writeSettingsFile: (value: SettingsV1) => Promise<void>,
+		writeSettingsFile: (value: PluginSettings) => Promise<void>,
 	) {
 		this.app = app;
 		this.readSettingsFile = readSettingsFile;
@@ -30,7 +30,7 @@ export class SettingsStore {
 	}
 
 	/** Return the last successfully loaded or saved choices; otherwise return fresh defaults. */
-	get settings(): SettingsV1 {
+	get settings(): PluginSettings {
 		return this.prepared?.settings ?? this.defaults;
 	}
 
@@ -57,17 +57,21 @@ export class SettingsStore {
 		});
 	}
 
-	/** Apply an edit to a validated copy. Keep using the old settings if saving the copy fails. */
-	update(change: (settings: SettingsV1) => void): Promise<void> {
+	/** Apply an edit to an isolated draft. Keep using the old settings if saving the draft fails. */
+	update(change: (settings: PluginSettings) => void): Promise<void> {
 		return this.enqueue(async () => {
 			if (!this.canSave || !this.prepared) throw new Error('Auto Anki settings could not be loaded. Reload the plugin after fixing data.json before editing settings.');
-			const next = normalizeSettings(this.settings);
+			const next = structuredClone(this.settings);
 			change(next);
-			const prepared = { ...this.prepared, settings: normalizeSettings(next) };
 			// If an old key could not be moved to the Keychain, settingsData keeps it
 			// in the file until a later load can confirm the move. Ordinary edits must not lose it.
-			await this.writeSettingsFile(settingsData(prepared));
-			this.prepared = prepared;
+			const data = settingsData({ ...this.prepared, settings: next });
+			// Detach committed settings from the writer's payload, without exposing legacy keys.
+			const settings = structuredClone(data);
+			delete settings.openAiApiKey;
+			delete settings.openAiApiKeyIdentifier;
+			await this.writeSettingsFile(data);
+			this.prepared = { ...this.prepared, settings };
 		});
 	}
 

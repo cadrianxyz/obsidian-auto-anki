@@ -1,23 +1,19 @@
-import type { ModelSettings, SettingsV1 } from '../settings/model';
-import type { SourceNote } from '../note/read';
-import type { PreparedDiagrams } from '../note/images';
-import { requestOpenAiCards } from '../ai/openai-chat';
-import { requestAnthropicCards } from '../ai/anthropic-messages';
-import { PROVIDER_PRESETS, type Protocol, type ProviderId } from '../ai/presets';
+import type { ModelSettings, PluginSettings } from '../settings/schema';
+import type { SourceNote } from '../source-note/content';
+import type { PreparedDiagrams } from '../source-note/images';
+import { getProvider } from '../ai/registry';
+import type { ProviderId } from '../ai/providers';
 import { createGenerationPrompt, type RunPreferences } from './prompt';
-import { parseGeneratedCards, type GenerationResult } from './result';
-import type { ResolvedOutputMode } from '../ai/model-info';
-
-const GENERATORS: Record<Protocol, typeof requestOpenAiCards> = {
-	'openai-chat': requestOpenAiCards,
-	'anthropic-messages': requestAnthropicCards,
-};
+import { parseGeneratedNotes, type GenerationResult } from './result';
+import type { ResolvedOutputMode } from '../ai/generation';
+import type { AnkiDestinations } from '../anki/note-types';
 
 /** Apply one immutable settings snapshot to the note being reviewed. No settings writes here. */
-export async function generateCards(providerId: ProviderId, apiKey: string, model: ModelSettings, cards: SettingsV1['cards'], run: RunPreferences,
-	note: SourceNote, diagrams: PreparedDiagrams, signal?: AbortSignal): Promise<GenerationResult & { outputMode: ResolvedOutputMode }> {
-	const request = GENERATORS[PROVIDER_PRESETS[providerId].protocol];
-	const reply = await request(apiKey, model, createGenerationPrompt(cards, run, note, diagrams.diagrams), signal);
-	const result = parseGeneratedCards(reply.content, run.maximumCards);
+export async function generateNotes(providerId: ProviderId, apiKey: string, model: ModelSettings, preferences: PluginSettings['notes'], run: RunPreferences,
+	note: SourceNote, diagrams: PreparedDiagrams, destinations: AnkiDestinations, signal?: AbortSignal): Promise<GenerationResult & { outputMode: ResolvedOutputMode }> {
+	if (!destinations.types.length) throw new Error('No verified Anki destination is available. Enable an existing note type in Auto Anki → Anki.');
+	const prompt = createGenerationPrompt(preferences, run, note, diagrams.diagrams, destinations);
+	const reply = await getProvider(providerId).generate({ apiKey, model, prompt, signal });
+	const result = parseGeneratedNotes(reply.content, run.maximumNotes, destinations);
 	return { ...result, outputMode: reply.outputMode, warnings: [...diagrams.warnings, ...result.warnings] };
 }

@@ -1,5 +1,5 @@
 import { App } from 'obsidian';
-import { providerSecretName, type ProviderId } from '../ai/presets';
+import { providerSecretName, type ProviderId } from '../ai/providers';
 
 // The OpenAI API key lives in Obsidian's Keychain (app.secretStorage, Obsidian 1.11.4+),
 // not in data.json. data.json sits inside the vault, so anything that copies the vault

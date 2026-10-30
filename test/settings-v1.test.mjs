@@ -1,16 +1,16 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PROVIDER_PRESETS, providerSecretName } from '../src/ai/presets';
-import { createDefaultSettings, createModelSettings, normalizeSettings, NewerSettingsVersionError } from '../src/settings/model';
-import { getReasoningEffortsForModel } from '../src/ai/model-info';
-import { LEGACY_DEFAULT_MAX_OUTPUT_TOKENS, LEGACY_DEFAULT_OPENAI_MODEL } from '../src/settings/legacy-defaults';
-import { readProviderModelInfo } from '../src/ai/model-discovery';
+import { providerSecretName } from '../src/ai/providers';
+import { createDefaultSettings, createModelSettings, normalizeSettings, NewerSettingsVersionError } from '../src/settings/schema';
+import { getReasoningEffortsForModel } from '../src/ai/models/metadata';
+import { LEGACY_DEFAULT_MAX_OUTPUT_TOKENS, LEGACY_DEFAULT_OPENAI_MODEL } from '../src/settings/legacy';
+import { fetchModels as fetchOpenAiModels } from '../src/ai/openai/models';
+import { fetchModels as fetchAnthropicModels } from '../src/ai/anthropic/models';
 import { prepareSettings, settingsData } from '../src/settings/migration';
 import { makeKeychain } from './helpers.mjs';
 
 const SECRET = providerSecretName('openai');
 const KEY = 'old-openai-test-key';
-const SUGGESTED_MODEL = PROVIDER_PRESETS.openai.suggestedModel;
 const OLD_MODEL = 'previous-user-selected-model';
 
 function app(keychain = makeKeychain()) {
@@ -34,9 +34,9 @@ describe('1.0 settings defaults and validation', () => {
 		assert.deepEqual(Object.values(prepared.settings.providers).map(p => [p.id, p.secretName, p.models]), [
 			['openai', SECRET, []], ['anthropic', 'auto-anki-anthropic-api-key', []],
 		]);
-		assert.equal(prepared.settings.anki.tagCards, true);
-		assert.equal(prepared.settings.cards.coverageLevel, 'main-ideas-and-details');
-		assert.ok(!('cardWritingInstructions' in prepared.settings.cards));
+		assert.equal(prepared.settings.anki.tagNotes, true);
+		assert.equal(prepared.settings.notes.coverageLevel, 'main-ideas-and-details');
+		assert.ok(!('noteWritingInstructions' in prepared.settings.notes));
 		assert.ok(!('linkToNote' in prepared.settings.anki));
 	});
 
@@ -51,8 +51,8 @@ describe('1.0 settings defaults and validation', () => {
 		const second = createDefaultSettings();
 		const loaded = normalizeSettings(first);
 		loaded.providers.openai.models.push(createModelSettings('manual-model'));
-		loaded.anki.cloze.extraField = 'Extra';
-		loaded.cards.extraInstructions = 'Preference';
+		loaded.anki.enabledNoteTypes.push('Custom');
+		loaded.notes.extraInstructions = 'Preference';
 		assert.deepEqual(first, second);
 		first.providers.openai.name = 'Changed';
 		assert.equal(second.providers.openai.name, 'OpenAI');
@@ -61,36 +61,80 @@ describe('1.0 settings defaults and validation', () => {
 	test('invalid nested fields fall back independently, preserving valid siblings', () => {
 		const settings = normalizeSettings({
 			settings_version: 1,
-			cards: { sendDiagrams: 'yes', coverageLevel: 'invented', extraInstructions: 'British spelling' },
-			anki: { url: 'file:///vault/private', questionAnswer: [], cloze: null, deckTemplate: '  ', tagCards: false, tagTemplate: 123 },
+			notes: { sendDiagrams: 'yes', coverageLevel: 'invented', extraInstructions: 'British spelling' },
+			anki: { url: 'file:///vault/private', deckTemplate: '  ', tagNotes: false, tagTemplate: 123 },
 		});
-		assert.equal(settings.cards.sendDiagrams, true);
-		assert.equal(settings.cards.coverageLevel, 'main-ideas-and-details');
-		assert.equal(settings.cards.extraInstructions, 'British spelling');
+		assert.equal(settings.notes.sendDiagrams, true);
+		assert.equal(settings.notes.coverageLevel, 'main-ideas-and-details');
+		assert.equal(settings.notes.extraInstructions, 'British spelling');
 		assert.equal(settings.anki.url, 'http://127.0.0.1:8765');
 		assert.equal(settings.anki.deckTemplate, 'Obsidian::{{vault}}');
-		assert.equal(settings.anki.tagCards, false);
+		assert.equal(settings.anki.tagNotes, false);
 		assert.equal(settings.anki.tagTemplate, 'auto-anki::{{provider}}::{{model}}');
 	});
 
-	test('user mappings and instruction edits survive a round trip exactly', () => {
+	test('canonical strings are trimmed while names and Markdown retain their spacing', () => {
+			const settings = normalizeSettings({
+				providers: { openai: { name: ' OpenAI custom ', models: [
+					{ id: ' model-id ', reasoningEffort: ' high ' },
+					{ id: ' blank-effort ', reasoningEffort: ' \n ' },
+					{ id: ' invalid-effort ', reasoningEffort: 12 },
+					{ id: '   ' }, { id: 12 },
+				] } },
+				notes: { extraInstructions: ' \nKeep spacing\n ', noteWritingInstructions: { text: ' Instructions\n ', defaultVersion: ' version ' } },
+				anki: { url: ' https://example.com/anki?x=1 ', deckTemplate: ' Deck ' },
+			});
+			assert.equal(settings.anki.url, 'https://example.com/anki?x=1');
+			assert.equal(settings.anki.deckTemplate, ' Deck ');
+			assert.equal(settings.providers.openai.name, ' OpenAI custom ');
+			assert.deepEqual(settings.providers.openai.models.map(({ id, reasoningEffort }) => [id, reasoningEffort]), [
+				['model-id', 'high'], ['blank-effort', 'default'], ['invalid-effort', 'default'],
+			]);
+			assert.equal(settings.notes.extraInstructions, ' \nKeep spacing\n ');
+			assert.deepEqual(settings.notes.noteWritingInstructions, { text: ' Instructions\n ', defaultVersion: ' version ' });
+			for (const url of [' https://user:pass@example.com ', ' file:///private ', 'not a URL', '   ', 12, null]) {
+				assert.equal(normalizeSettings({ anki: { url } }).anki.url, createDefaultSettings().anki.url);
+			}
+		});
+
+		test('settingsData validates mutable settings and strips unknown fields without sharing snapshots', () => {
+			const prepared = prepareSettings(app(null), { ...createDefaultSettings(), openAiApiKey: KEY, openAiApiKeyIdentifier: 'masked' });
+			prepared.settings.providers.openai.models.push({ ...createModelSettings(' model '), maxOutputTokens: -1, apiKey: 'discard' });
+			prepared.settings.notes.sendDiagrams = 'false';
+			prepared.settings.notes.apiKey = 'discard';
+			prepared.settings.apiKey = 'discard';
+			const saved = settingsData(prepared);
+			assert.equal(saved.openAiApiKey, KEY);
+			assert.equal(saved.openAiApiKeyIdentifier, 'masked');
+			assert.equal(saved.providers.openai.models[0].id, 'model');
+			assert.equal(saved.providers.openai.models[0].maxOutputTokens, 25000);
+			assert.equal(saved.notes.sendDiagrams, true);
+			assert.ok(!('apiKey' in saved));
+			assert.ok(!('apiKey' in saved.notes));
+			assert.ok(!('apiKey' in saved.providers.openai.models[0]));
+			saved.providers.openai.models[0].id = 'Changed';
+			saved.anki.enabledNoteTypes.push('Custom');
+			assert.equal(prepared.settings.providers.openai.models[0].id, ' model ');
+			assert.deepEqual(prepared.settings.anki.enabledNoteTypes, ['Basic', 'Cloze']);
+		});
+
+		test('user mappings and instruction edits survive a round trip exactly', () => {
 		const settings = createDefaultSettings();
-		settings.cards.cardWritingInstructions = { text: 'My own instructions\n', defaultVersion: '1.0.0' };
-		settings.cards.extraInstructions = '## Style\n\n- British spelling\n- Keep answers **short**\r\n\n';
-		settings.anki.questionAnswer = { noteType: '基本', questionField: 'Question', answerField: 'Answer' };
-		settings.anki.cloze = { noteType: '穴埋め', textField: 'Text', extraField: 'Explanation' };
+		settings.notes.noteWritingInstructions = { text: 'My own instructions\n', defaultVersion: '1.0.0' };
+		settings.notes.extraInstructions = '## Style\n\n- British spelling\n- Keep answers **short**\r\n\n';
+		settings.anki.enabledNoteTypes = ['基本'];
 		settings.anki.url = 'https://my-anki.example/api';
 		settings.anki.deckTemplate = 'My deck';
-		settings.anki.tagCards = false;
+		settings.anki.tagNotes = false;
 		settings.anki.tagTemplate = '';
 		const result = normalizeSettings(JSON.parse(JSON.stringify(settings)));
 		assert.deepEqual(result, settings);
-		result.cards.cardWritingInstructions.text = 'Changed';
-		assert.equal(settings.cards.cardWritingInstructions.text, 'My own instructions\n');
+		result.notes.noteWritingInstructions.text = 'Changed';
+		assert.equal(settings.notes.noteWritingInstructions.text, 'My own instructions\n');
 	});
 
 	test('an incomplete instruction override is discarded instead of being treated as a user edit', () => {
-		assert.ok(!('cardWritingInstructions' in normalizeSettings({ cards: { cardWritingInstructions: { text: 'lost metadata' } } }).cards));
+		assert.ok(!('noteWritingInstructions' in normalizeSettings({ notes: { noteWritingInstructions: { text: 'lost metadata' } } }).notes));
 	});
 
 	test('model IDs are unrestricted, scoped to providers, deduplicated, and validated without version-name rules', () => {
@@ -104,7 +148,7 @@ describe('1.0 settings defaults and validation', () => {
 		const settings = normalizeSettings(saved);
 		assert.equal(settings.providers.openai.models.length, 1);
 		assert.equal(settings.providers.openai.models[0].reasoningEffort, 'minimal');
-		assert.equal(settings.providers.anthropic.models[0].reasoningEffort, 'default');
+		assert.equal(settings.providers.anthropic.models[0].reasoningEffort, 'minimal', 'saved levels are kept without known capabilities');
 		assert.equal(settings.providers.anthropic.models[0].maxOutputTokens, 25000);
 		assert.deepEqual(settings.defaultModel, saved.defaultModel);
 	});
@@ -169,18 +213,30 @@ describe('1.0 settings defaults and validation', () => {
 	});
 });
 
+// --- Provider metadata through model listing ---
+
+function listReportedModels(providerId, data) {
+	const fetchModels = providerId === 'anthropic' ? fetchAnthropicModels : fetchOpenAiModels;
+	return fetchModels({
+		apiKey: 'test-key', timeoutMs: 1000, signal: new AbortController().signal,
+		fetch: async () => new Response(JSON.stringify({ data, has_more: false }), {
+			status: 200, headers: { 'content-type': 'application/json' },
+		}),
+	});
+}
+
 describe('provider-reported model capabilities', () => {
-	test('Claude effort levels come from metadata, including a new level absent from the fallback', () => {
-		const info = readProviderModelInfo('anthropic', {
+	test('Claude effort levels come from metadata, including a level the plugin has never seen', async () => {
+		const [info] = await listReportedModels('anthropic', [{
 			id: 'future-claude', display_name: 'Future Claude',
 			capabilities: {
 				effort: { supported: true, low: { supported: true }, high: { supported: false }, new_level: { supported: true } },
 				image_input: { supported: true }, structured_outputs: { supported: true },
 			},
-		});
+		}]);
 		assert.equal(info.displayName, 'Future Claude');
 		assert.deepEqual(info.capabilities, { outputMode: 'json_schema', acceptsImages: true, reasoningEfforts: ['low', 'new_level'] });
-		assert.deepEqual(getReasoningEffortsForModel('anthropic', info), ['default', 'low', 'new_level']);
+		assert.deepEqual(getReasoningEffortsForModel(info), ['default', 'low', 'new_level']);
 		const saved = createDefaultSettings();
 		saved.providers.anthropic.models.push({ ...createModelSettings(info.id), capabilities: info.capabilities, reasoningEffort: 'new_level' });
 		const reloaded = normalizeSettings(JSON.parse(JSON.stringify(saved)));
@@ -189,36 +245,38 @@ describe('provider-reported model capabilities', () => {
 		assert.deepEqual(reloaded.providers.anthropic.models[0].capabilities.reasoningEfforts, ['low', 'new_level']);
 	});
 
-	test('Claude explicitly reporting no effort support offers only Model default', () => {
-		const info = readProviderModelInfo('anthropic', { id: 'no-reasoning', capabilities: { effort: { supported: false, high: { supported: true } } } });
-		assert.deepEqual(getReasoningEffortsForModel('anthropic', info), ['default']);
+	test('Claude explicitly reporting no effort support offers only Model default, but keeps a saved level', async () => {
+		const [info] = await listReportedModels('anthropic', [{ id: 'no-reasoning', capabilities: { effort: { supported: false, high: { supported: true } } } }]);
+		assert.deepEqual(getReasoningEffortsForModel(info), ['default']);
 		const saved = createDefaultSettings();
 		saved.providers.anthropic.models.push({ ...createModelSettings(info.id), capabilities: info.capabilities, reasoningEffort: 'high' });
-		assert.equal(normalizeSettings(saved).providers.anthropic.models[0].reasoningEffort, 'default');
+		assert.equal(normalizeSettings(saved).providers.anthropic.models[0].reasoningEffort, 'high', 'loading must not reset a choice');
 	});
 
-	test('missing Claude effort metadata uses the fallback without claiming to have discovered it', () => {
-		const info = readProviderModelInfo('anthropic', { id: 'metadata-unavailable', capabilities: null });
+	test('missing Claude effort metadata offers only Model default without claiming to have discovered it', async () => {
+		const [info] = await listReportedModels('anthropic', [{ id: 'metadata-unavailable', capabilities: null }]);
 		assert.ok(!('capabilities' in info));
-		assert.deepEqual(getReasoningEffortsForModel('anthropic', info), PROVIDER_PRESETS.anthropic.fallbacks.reasoningEfforts);
+		assert.deepEqual(getReasoningEffortsForModel(info), ['default']);
 	});
 
-	test('unknown or malformed individual capabilities do not invent support', () => {
-		const info = readProviderModelInfo('anthropic', {
+	test('unknown or malformed individual capabilities do not invent support', async () => {
+		const [info] = await listReportedModels('anthropic', [{
 			id: 'partial', capabilities: { image_input: { supported: false }, structured_outputs: { supported: false }, effort: { supported: true, low: { supported: 'yes' } } },
-		});
+		}]);
 		assert.deepEqual(info.capabilities, { acceptsImages: false });
-		assert.deepEqual(getReasoningEffortsForModel('anthropic', info), PROVIDER_PRESETS.anthropic.fallbacks.reasoningEfforts);
+		assert.deepEqual(getReasoningEffortsForModel(info), ['default']);
 	});
 
-	test('OpenAI model identity has no documented effort metadata, so protocol fallback choices apply', () => {
-		const info = readProviderModelInfo('openai', { id: 'future-openai', created: 123, owned_by: 'openai' });
+	test('OpenAI model identity has no documented effort metadata, so it reports no levels', async () => {
+		const [info] = await listReportedModels('openai', [{ id: 'future-openai', created: 123, owned_by: 'openai' }]);
 		assert.deepEqual(info, { id: 'future-openai', displayName: 'future-openai' });
-		assert.deepEqual(getReasoningEffortsForModel('openai', info), PROVIDER_PRESETS.openai.fallbacks.reasoningEfforts);
+		assert.deepEqual(getReasoningEffortsForModel(info), ['default']);
 	});
 
-	test('malformed provider records and corrupt cached effort lists are safe to read', () => {
-		for (const value of [null, [], true, { id: '' }, { id: 1 }]) assert.equal(readProviderModelInfo('anthropic', value), null);
+	test('malformed provider records and corrupt cached effort lists are safe to read', async () => {
+		for (const value of [null, [], true, { id: '' }, { id: 1 }]) {
+			assert.deepEqual(await listReportedModels('anthropic', [value, { id: 'valid-model' }]), [{ id: 'valid-model', displayName: 'valid-model' }]);
+		}
 		const saved = createDefaultSettings();
 		saved.providers.anthropic.models.push({ id: 'bad-efforts', capabilities: { reasoningEfforts: ['high', 3] } });
 		assert.ok(!('capabilities' in normalizeSettings(saved).providers.anthropic.models[0]));
@@ -226,31 +284,36 @@ describe('provider-reported model capabilities', () => {
 });
 
 describe('0.x → 1.0 settings migration', () => {
-	test('0.3 upgrades select the new suggested model even if a different model was selected before', () => {
+	test('0.3 upgrades keep the previously selected model as the only model and the default', () => {
 		const source = legacy();
 		const prepared = prepareSettings(app(), source);
 		assert.equal(prepared.migrated, true);
-		assert.deepEqual(prepared.settings.defaultModel, { providerId: 'openai', modelId: SUGGESTED_MODEL });
+		assert.deepEqual(prepared.settings.defaultModel, { providerId: 'openai', modelId: OLD_MODEL });
+		assert.deepEqual(prepared.settings.providers.openai.models.map(model => model.id), [OLD_MODEL]);
 		assert.equal(prepared.settings.providers.openai.models[0].maxOutputTokens, 25000);
 		assert.ok(!('questionGenerationDefaults' in settingsData(prepared)));
 		assert.equal(source.openAiModel, OLD_MODEL, 'migration must not mutate its input');
 	});
 
-	test('custom settings stay on their previous model, leaving a different new default at its own defaults', () => {
+	test('legacy model IDs and reasoning efforts trim once and keep their existing fallbacks', () => {
+			for (const [value, expectedId, expectedEffort] of [
+				[' custom ', 'custom', 'custom'], [' \n ', LEGACY_DEFAULT_OPENAI_MODEL, 'default'],
+				[12, LEGACY_DEFAULT_OPENAI_MODEL, 'default'], [null, LEGACY_DEFAULT_OPENAI_MODEL, 'default'],
+			]) {
+				const prepared = prepareSettings(app(), legacy({ openAiModel: value, generation: { reasoningEffort: value } }));
+				const [model] = prepared.settings.providers.openai.models;
+				assert.equal(model.id, expectedId);
+				assert.equal(model.reasoningEffort, expectedEffort);
+				assert.equal(prepared.settings.defaultModel.modelId, expectedId);
+			}
+		});
+
+		test('custom settings carry over to the previous model', () => {
 		const prepared = prepareSettings(app(), legacy({ generation: { reasoningEffort: 'low', maxOutputTokens: 8000 } }));
-		const [suggested, previous] = prepared.settings.providers.openai.models;
-		assert.equal(suggested.reasoningEffort, 'default');
-		assert.equal(suggested.maxOutputTokens, 25000);
+		const [previous] = prepared.settings.providers.openai.models;
 		assert.equal(previous.id, OLD_MODEL);
 		assert.equal(previous.reasoningEffort, 'low');
 		assert.equal(previous.maxOutputTokens, 8000);
-	});
-
-	test('custom settings carry over when the previous model is also the suggested model', () => {
-		const prepared = prepareSettings(app(), legacy({ openAiModel: SUGGESTED_MODEL, generation: { reasoningEffort: 'high', maxOutputTokens: 9000 } }));
-		assert.equal(prepared.settings.providers.openai.models.length, 1);
-		assert.equal(prepared.settings.providers.openai.models[0].maxOutputTokens, 9000);
-		assert.equal(prepared.settings.providers.openai.models[0].reasoningEffort, 'high');
 	});
 
 	test('a missing legacy model is interpreted using its historical default and keeps its custom settings', () => {
@@ -288,7 +351,7 @@ describe('0.x → 1.0 settings migration', () => {
 	});
 
 	test('a legacy file containing only a key still gets an OpenAI default after migration', () => {
-		assert.equal(prepareSettings(app(), { openAiApiKey: KEY }).settings.defaultModel.modelId, SUGGESTED_MODEL);
+		assert.equal(prepareSettings(app(), { openAiApiKey: KEY }).settings.defaultModel.modelId, LEGACY_DEFAULT_OPENAI_MODEL);
 	});
 
 	for (const mode of ['ignores-writes', 'throws-on-write', 'throws', 'missing']) {
@@ -296,7 +359,7 @@ describe('0.x → 1.0 settings migration', () => {
 			const device = app(mode === 'missing' ? null : makeKeychain(mode));
 			const prepared = prepareSettings(device, { ...legacy(), openAiApiKey: KEY, openAiApiKeyIdentifier: 'masked' });
 			assert.equal(prepared.keyMigration, mode === 'missing' ? 'unavailable' : 'failed');
-			prepared.settings.cards.extraInstructions = 'Changed in settings';
+			prepared.settings.notes.extraInstructions = 'Changed in settings';
 			const saved = settingsData(prepared);
 			assert.equal(saved.openAiApiKey, KEY);
 			const restart = prepareSettings(device, JSON.parse(JSON.stringify(saved)));
@@ -305,7 +368,7 @@ describe('0.x → 1.0 settings migration', () => {
 			const recovered = prepareSettings(app(workingKeychain), settingsData(restart));
 			assert.equal(workingKeychain.secrets.get(SECRET), KEY);
 			assert.ok(!('openAiApiKey' in settingsData(recovered)));
-			assert.equal(recovered.settings.cards.extraInstructions, 'Changed in settings');
+			assert.equal(recovered.settings.notes.extraInstructions, 'Changed in settings');
 		});
 	}
 

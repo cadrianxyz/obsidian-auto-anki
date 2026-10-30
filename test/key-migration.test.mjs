@@ -12,7 +12,7 @@ import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { fake } from 'obsidian';
 import { migrateLegacyApiKey } from '../src/utils/api-key';
-import { DEFAULT_OPENAI_MODEL } from '../src/settings';
+import { LEGACY_DEFAULT_OPENAI_MODEL } from '../src/settings/legacy';
 import {
 	SECRET_ID, DATA_0_2_1, DATA_0_2_2, DATA_NO_KEY,
 	makeDisk, makeKeychain, makeDevice, loadPlugin, readDataJson,
@@ -157,7 +157,7 @@ describe('loading the plugin', () => {
 			assert.equal(after.anki.url, 'http://127.0.0.1:8765');
 			assert.equal(after.anki.deckTemplate, 'Biology');
 			assert.equal(after.settings_version, 1);
-			assert.deepEqual(after.defaultModel, { providerId: 'openai', modelId: DEFAULT_OPENAI_MODEL });
+			assert.deepEqual(after.defaultModel, { providerId: 'openai', modelId: data.openAiModel ?? LEGACY_DEFAULT_OPENAI_MODEL });
 			assert.ok(!('gptAdvancedOptions' in after), 'old sampling settings left in data.json');
 
 			assert.equal(noticesMatching(/moved your OpenAI API key/).length, 1);

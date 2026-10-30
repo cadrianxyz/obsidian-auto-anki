@@ -57,18 +57,18 @@ If your plugin does not need CSS, delete this file.
     animation-iteration-count: infinite;
     animation-timing-function: linear;
 }
-@-webkit-keyframes spin { 
-    from { 
-        -webkit-transform: rotate(0deg); 
-    } to { 
-        -webkit-transform: rotate(360deg); 
+@-webkit-keyframes spin {
+    from {
+        -webkit-transform: rotate(0deg);
+    } to {
+        -webkit-transform: rotate(360deg);
     }
 }
-@keyframes spin { 
-    from { 
-        transform: rotate(0deg); 
-    } to { 
-        transform: rotate(360deg); 
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    } to {
+        transform: rotate(360deg);
     }
 }
 
@@ -111,7 +111,24 @@ If your plugin does not need CSS, delete this file.
     color: var(--text-on-accent);
 }
 
-.auto-anki-add-models {
+.setting-title .setting-item-name {
+    font-size: var(--font-ui-large);
+}
+
+.auto-anki-manage-models .auto-anki-model-description {
+    font-size: var(--font-ui-small);
+}
+
+.search-description {
+	padding-top: 0;
+    padding-bottom: 1em;
+}
+.setting-horizontal-padding {
+	padding-left: var(--setting-items-padding-x);
+	padding-right: var(--setting-items-padding-x);
+}
+
+.auto-anki-manage-models {
     width: min(680px, 90vw);
 }
 
@@ -123,6 +140,35 @@ If your plugin does not need CSS, delete this file.
 
 .auto-anki-model-advanced {
     margin-block: var(--size-4-3);
+}
+
+/* --- Export confirmation --- */
+
+.auto-anki-export {
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh;
+    max-height: 85dvh;
+}
+
+.auto-anki-export .modal-content {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+}
+
+.auto-anki-export .modal-title {
+    flex-shrink: 0;
+}
+
+.auto-anki-export-options {
+    margin-block: var(--size-4-3);
+}
+
+.auto-anki-export-options > summary {
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    padding-block: var(--size-4-1);
 }
 
 .auto-anki-instructions .setting-item {
@@ -139,3 +185,6 @@ If your plugin does not need CSS, delete this file.
     width: 100%;
     resize: vertical;
 }
+
+/* Preserve generated field line breaks in the text review. */
+.anki-note-field-value { white-space: pre-wrap; }

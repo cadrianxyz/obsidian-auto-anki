@@ -1,35 +1,38 @@
-import { Editor, MarkdownView, Notice, Plugin, setIcon } from 'obsidian';
-import { ModelDiscovery } from './ai/model-discovery';
-import { ModelCatalogCacheFile } from './ai/model-catalog-cache';
-import { PROVIDER_PRESETS, type ProviderId } from './ai/presets';
-import { AutoAnkiSettingTab } from './settings-tab';
+import { Editor, MarkdownView, Notice, Plugin } from 'obsidian';
+import { ModelDiscovery } from './ai/models/discovery';
+import { ModelCatalogCacheFile } from './ai/models/catalog-cache';
+import { PROVIDER_IDS, PROVIDER_NAMES, type ProviderId } from './ai/providers';
+import { AutoAnkiSettingTab } from './ui/settings/tab';
 import { SettingsStore } from './settings/store';
-import { createModelSettings, normalizeSettings, type SettingsV1 } from './settings/model';
-import type { SourceNote } from './note/read';
-import { ExportModal } from './modal';
+import { createModelSettings, type PluginSettings } from './settings/schema';
+import type { SourceNote } from './source-note/content';
+import { AnkiClient } from './anki/client';
+import { getDestinations, verifyNoteType, NoteTypeDiscovery, readNoteType, readNoteTypeNames, type AnkiDestinations } from './anki/note-types';
+import { ExportModal, type ExportModel } from './ui/export-flow';
 import { getProviderApiKey, setProviderApiKey, type KeyMigrationResult } from './utils/api-key';
-import type { StatusBarElement } from './utils/cusom-types';
+import { GenerationStatus } from './ui/generation-status';
 
 export default class AutoAnkiPlugin extends Plugin {
 	settingsStore!: SettingsStore;
 	discovery!: ModelDiscovery;
+	readonly ankiTypes = new NoteTypeDiscovery();
+	private readonly noteTypeSelections = new Map<string, number>();
 	private settingsTab?: AutoAnkiSettingTab;
-	settings!: SettingsV1;
-	statusBar!: StatusBarElement;
-	statusBarIcon!: HTMLElement;
+	settings!: PluginSettings;
+	private generationStatus!: GenerationStatus;
 
 	async onload(): Promise<void> {
 		// Obsidian knows where this plugin's data.json lives. Give the store these
 		// two functions so it can read/save settings without choosing a file path itself.
 		const readSettingsFile = (): Promise<unknown> => this.loadData();
-		const writeSettingsFile = (settings: SettingsV1): Promise<void> => this.saveData(settings);
+		const writeSettingsFile = (settings: PluginSettings): Promise<void> => this.saveData(settings);
 		this.settingsStore = new SettingsStore(this.app, readSettingsFile, writeSettingsFile);
 		const cache = this.manifest.dir ? new ModelCatalogCacheFile(this.app.vault.adapter, this.manifest.dir) : undefined;
 		this.discovery = new ModelDiscovery(undefined, undefined, undefined, cache);
 		await Promise.all([this.loadSettings(), this.discovery.restoreCatalog()]);
 		this.settingsTab = new AutoAnkiSettingTab(this.app, this);
 		this.addSettingTab(this.settingsTab);
-		this.setupStatusBar();
+		this.generationStatus = new GenerationStatus(this.addStatusBarItem());
 		this.addCommand({
 			id: 'export-current-file-to-anki', name: 'Export current file to Anki',
 			checkCallback: (checking: boolean) => {
@@ -78,7 +81,7 @@ export default class AutoAnkiPlugin extends Plugin {
 		await this.loadSettings(true);
 	}
 
-	async updateSettings(change: (settings: SettingsV1) => void, refreshUI = true): Promise<boolean> {
+	async updateSettings(change: (settings: PluginSettings) => void, refreshUI = true): Promise<boolean> {
 		try {
 			await this.settingsStore.update(change);
 			this.settings = this.settingsStore.settings;
@@ -96,6 +99,51 @@ export default class AutoAnkiPlugin extends Plugin {
 		await this.updateSettings(() => {});
 	}
 
+	// --- Anki note-type discovery and selection ---
+
+	/** Discovery never deletes selections when Anki is disconnected. */
+	async refreshAnkiTypes(): Promise<void> {
+		await this.ankiTypes.refresh(this.settings.anki.url);
+		this.settingsTab?.update();
+	}
+
+	async prepareAnkiDestinations(anki: PluginSettings['anki']): Promise<AnkiDestinations> {
+		const client = new AnkiClient(anki.url);
+		const names = await readNoteTypeNames(client);
+		const types = [];
+		for (const name of anki.enabledNoteTypes) {
+			if (!names.has(name)) continue;
+			try { types.push(await readNoteType(client, name, names.get(name)!)); }
+			catch (error) { types.push({ name, id: names.get(name)!, fields: [], templates: [], descriptions: {}, problem: error instanceof Error ? error.message : 'Could not verify this type.' }); }
+		}
+		return getDestinations(anki, types);
+	}
+
+	/** Turning off always works; enabling requires a fresh read from the same collection. */
+	async setAnkiNoteTypeEnabled(name: string, enabled: boolean): Promise<void> {
+		const url = this.settings.anki.url;
+		const revision = (this.noteTypeSelections.get(name) ?? 0) + 1;
+		this.noteTypeSelections.set(name, revision);
+		try {
+			if (enabled) {
+				const client = new AnkiClient(url);
+				const names = await readNoteTypeNames(client);
+				if (!names.has(name)) throw new Error('This note type is no longer available in Anki. Refresh the list.');
+				verifyNoteType(await readNoteType(client, name, names.get(name)!));
+			}
+			await this.updateSettings(settings => {
+				if (this.noteTypeSelections.get(name) !== revision) return;
+				if (settings.anki.url !== url) throw new Error('The Anki address changed. Refresh the list and try again.');
+				const selected = new Set(settings.anki.enabledNoteTypes);
+				if (enabled) selected.add(name); else selected.delete(name);
+				settings.anki.enabledNoteTypes = [...selected];
+			});
+		}
+		catch (error) { new Notice(error instanceof Error ? error.message : 'Could not verify this note type.'); this.settingsTab?.update(); }
+	}
+
+	// --- AI provider connections and model selection ---
+
 	async connectProvider(providerId: ProviderId, value: string): Promise<boolean> {
 		if (!this.settingsStore.canSave) return false;
 		if (!setProviderApiKey(this.app, providerId, value)) {
@@ -104,11 +152,8 @@ export default class AutoAnkiPlugin extends Plugin {
 		}
 		this.discovery.clearProvider(providerId);
 		// Retry any pending legacy key cleanup against the newly verified Keychain.
-		if (!await this.loadSettings()) return false;
-		// Changing a key must not add models or undo the user's visibility choices.
-		if (this.settings.providers[providerId].models.length) return true;
-		const suggested = PROVIDER_PRESETS[providerId].suggestedModel;
-		return this.configureModel(providerId, suggested, this.settings.defaultModel === null);
+		// Connecting adds no models: the user chooses them under Manage models.
+		return this.loadSettings();
 	}
 
 	async configureModel(providerId: ProviderId, modelId: string, makeDefault: boolean): Promise<boolean> {
@@ -127,29 +172,40 @@ export default class AutoAnkiPlugin extends Plugin {
 		});
 	}
 
-	/** Add a whole selection in one save, keeping existing preferences and the default. */
-	async addModels(providerId: ProviderId, modelIds: readonly string[]): Promise<boolean> {
-		const ids = [...new Set(modelIds.map(id => id.trim()).filter(id => id && !/\s/.test(id)))];
-		if (!ids.length) return false;
-		const known = new Map(this.discovery.getModels(providerId, this.settings.providers[providerId].models, ids).map(model => [model.id, model]));
+	/** Apply only edited choices in one save, keeping preferences and unrelated changes. */
+	async updateModelSelection(providerId: ProviderId, changes: ReadonlyMap<string, boolean>): Promise<boolean> {
+		const entries = [...changes].filter(([id]) => id && id === id.trim() && !/\s/.test(id));
+		if (!entries.length) return false;
+		const known = new Map(this.discovery.getModels(providerId, this.settings.providers[providerId].models,
+			entries.map(([id]) => id)).map(model => [model.id, model]));
 		return this.updateSettings(settings => {
-			for (const id of ids) {
-				const existing = settings.providers[providerId].models.find(model => model.id === id);
-				if (existing) { existing.enabled = true; continue; }
-				const model = createModelSettings(id);
-				if (known.get(id)?.capabilities) model.capabilities = known.get(id)!.capabilities;
-				settings.providers[providerId].models.push(model);
+			const hadDefault = !!settings.defaultModel;
+			for (const [id, enabled] of entries) {
+				let model = settings.providers[providerId].models.find(model => model.id === id);
+				if (!model) {
+					if (!enabled) continue;
+					model = createModelSettings(id);
+					if (known.get(id)?.capabilities) model.capabilities = known.get(id)!.capabilities;
+					settings.providers[providerId].models.push(model);
+				}
+				model.enabled = enabled;
+				if (!enabled && settings.defaultModel?.providerId === providerId && settings.defaultModel.modelId === id) {
+					settings.defaultModel = null;
+				}
 			}
-			if (!settings.defaultModel) settings.defaultModel = { providerId, modelId: ids[0] };
+			const firstEnabled = entries.find(([, enabled]) => enabled)?.[0];
+			if (!hadDefault && firstEnabled) settings.defaultModel = { providerId, modelId: firstEnabled };
 		});
 	}
+
+	// --- Export flow ---
 
 	private openExport(text: string, selection: boolean, path = '', title = 'Untitled note'): void {
 		const reference = this.settings.defaultModel;
 		if (!reference) { new Notice('Choose a default model in the Auto Anki settings first.'); return; }
 		const key = getProviderApiKey(this.app, reference.providerId);
 		if (!key) {
-			new Notice(`No ${PROVIDER_PRESETS[reference.providerId].name} API key on this device. Add one in the Auto Anki settings. Keys stay in this device’s Keychain.`);
+			new Notice(`No ${PROVIDER_NAMES[reference.providerId]} API key on this device. Add one in the Auto Anki settings. Keys stay in this device’s Keychain.`);
 			return;
 		}
 		const providerId = reference.providerId;
@@ -157,13 +213,23 @@ export default class AutoAnkiPlugin extends Plugin {
 		if (!model?.enabled) return;
 		// An open dialog keeps its own snapshot. A sync or settings edit must not change
 		// the source, instructions or model halfway through a generation/review cycle.
-		const snapshot = normalizeSettings(this.settings);
-		const selectedModel = snapshot.providers[providerId].models.find(saved => saved.id === model.id)!;
-		const discovered = this.discovery.getModels(providerId, snapshot.providers[providerId].models).find(known => known.id === model.id);
-		if (discovered?.capabilities) selectedModel.capabilities = discovered.capabilities;
+		const snapshot = structuredClone(this.settings);
+		const models: ExportModel[] = [];
+		for (const id of PROVIDER_IDS) {
+			const apiKey = id === providerId ? key : getProviderApiKey(this.app, id);
+			if (!apiKey) continue;
+			const provider = snapshot.providers[id];
+			const discovered = this.discovery.getModels(id, provider.models);
+			for (const model of provider.models.filter(model => model.enabled)) {
+				const known = discovered.find(known => known.id === model.id);
+				if (known?.capabilities) model.capabilities = known.capabilities;
+				models.push({ providerId: id, apiKey, model });
+			}
+		}
+		const selectedModel = models.find(choice => choice.providerId === providerId && choice.model.id === model.id)!;
 		const source: SourceNote = { markdown: text, path, title };
-		new ExportModal(this.app, this.statusBar, source, key, providerId, selectedModel,
-			snapshot.anki.url, snapshot.anki.deckTemplate, snapshot.cards, selection, async mode => {
+		new ExportModal(this.app, this.generationStatus, source, selectedModel, models,
+			snapshot.anki.url, snapshot.anki.deckTemplate, snapshot.notes, selection, () => this.prepareAnkiDestinations(snapshot.anki), async ({ providerId, model }, mode) => {
 				const current = this.settings.providers[providerId].models.find(saved => saved.id === model.id);
 				if (!current || current.capabilities?.outputMode === mode) return;
 				await this.updateSettings(settings => {
@@ -173,25 +239,6 @@ export default class AutoAnkiPlugin extends Plugin {
 			}).open();
 	}
 
-	private setupStatusBar(): void {
-		this.statusBar = this.addStatusBarItem();
-		this.statusBar.className = 'status-bar-auto-anki';
-		this.statusBarIcon = this.statusBar.createSpan({ cls: 'status-bar-icon' });
-		this.statusBar.createDiv({ text: 'Auto Anki' });
-		this.statusBar.doReset = () => {
-			setIcon(this.statusBarIcon, 'check-circle-2');
-			this.statusBar.classList.remove('--running'); this.statusBar.classList.remove('--error');
-		};
-		this.statusBar.doDisplayError = () => {
-			setIcon(this.statusBarIcon, 'alert-circle');
-			this.statusBar.classList.remove('--running'); this.statusBar.classList.add('--error');
-		};
-		this.statusBar.doDisplayRunning = () => {
-			setIcon(this.statusBarIcon, 'refresh-cw');
-			this.statusBar.classList.remove('--error'); this.statusBar.classList.add('--running');
-		};
-		this.statusBar.doReset();
-	}
 
 	reportKeyMigration(result: KeyMigrationResult) {
 		const replaceAdvice = 'Older copies of your vault (synced, backed up or in Git) may still contain it, so consider replacing the key at OpenAI.';

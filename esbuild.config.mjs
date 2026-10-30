@@ -69,6 +69,7 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: "main.js",
 	plugins: [copyToVault],
+	minify: prod,
 });
 
 if (prod) {

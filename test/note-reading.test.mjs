@@ -2,8 +2,8 @@ import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { fake, FakeElement } from 'obsidian';
 import { makeDevice, resetAll } from './helpers.mjs';
-import { cleanNote, embeddedFiles } from '../src/note/read';
-import { prepareDiagrams, downscaleImage, MAX_IMAGE_EDGE } from '../src/note/images';
+import { cleanNote, embeddedFiles } from '../src/source-note/content';
+import { prepareDiagrams, downscaleImage, MAX_IMAGE_EDGE } from '../src/source-note/images';
 
 beforeEach(resetAll);
 const bytes = (...values) => new Uint8Array(values).buffer;
@@ -25,7 +25,11 @@ describe('reading only the study material', () => {
 		assert.deepEqual(embeddedFiles(cleanNote(code)), []);
 		assert.equal(cleanNote('Keep this. %%unfinished private comment'), 'Keep this. \n');
 	});
-	test('Markdown and wiki embeds work in lists, but escaped embeds and code do not', () => {
+	test('embedded links are deduplicated in first-occurrence order without merging different link spellings', () => {
+			const source = '![[b.png]] ![same](b.png) ![[a.png|300]] ![[b.png]] ![encoded](my%20diagram.png) ![[my diagram.png]] ![[a.png]]';
+			assert.deepEqual(embeddedFiles(source), ['b.png', 'a.png', 'my%20diagram.png', 'my diagram.png']);
+		});
+		test('Markdown and wiki embeds work in lists, but escaped embeds and code do not', () => {
 		const source = '- ![[a.png|300]]\n- ![caption](some%20file.png "Title")\n\n![reference][ref]\n\n[ref]: ref.webp\n\n\\![[escaped.png]] `![code](code.jpg)`\n\n```\n![[fenced.png]]\n```';
 		assert.deepEqual(embeddedFiles(source), ['a.png', 'some%20file.png', 'ref.webp']);
 	});

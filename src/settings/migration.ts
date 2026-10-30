@@ -1,13 +1,11 @@
 import type { App } from 'obsidian';
-import { PROVIDER_PRESETS } from '../ai/presets';
-import { migrateLegacyGenerationOptions } from '../settings';
 import { KeyMigrationResult, LegacyKeyFields, migrateLegacyApiKey } from '../utils/api-key';
-import { LEGACY_DEFAULT_MAX_OUTPUT_TOKENS, LEGACY_DEFAULT_OPENAI_MODEL } from './legacy-defaults';
-import { SettingsV1, checkSettingsVersion, createDefaultSettings, createModelSettings, normalizeSettings } from './model';
-import { asRecord, positiveInteger } from '../utils/data';
+import { LEGACY_DEFAULT_ANKI_PORT, LEGACY_DEFAULT_MAX_OUTPUT_TOKENS, LEGACY_DEFAULT_OPENAI_MODEL, migrateLegacyGenerationOptions } from './legacy';
+import { PluginSettings, SETTINGS_VERSION, checkSettingsVersion, createDefaultSettings, createModelSettings, normalizeSettings } from './schema';
+import { asRecord, asString, positiveInteger } from '../utils/data';
 
 export interface PreparedSettings {
-	settings: SettingsV1;
+	settings: PluginSettings;
 	// A failed key move is the sole exception to writing no secrets. Keep the original
 	// legacy fields on EVERY save until a later load can verify the Keychain write.
 	pendingLegacyKey: LegacyKeyFields;
@@ -16,30 +14,21 @@ export interface PreparedSettings {
 	migrated: boolean;
 }
 
-function migrateOldSettings(stored: Record<string, unknown>): SettingsV1 {
+function migrateOldSettings(stored: Record<string, unknown>): PluginSettings {
 	const settings = createDefaultSettings();
-	const provider = settings.providers.openai;
-	const suggestedId = PROVIDER_PRESETS.openai.suggestedModel;
-	const suggested = createModelSettings(suggestedId);
-	provider.models.push(suggested);
-	settings.defaultModel = { providerId: 'openai', modelId: suggestedId };
 
-	// 0.x → 1.0 intentionally changes the default model. Retain customised settings
-	// on the old model so selecting it later is possible, without applying settings
-	// intended for that model to a different one.
-	const previousId = typeof stored.openAiModel === 'string' && stored.openAiModel.trim() ? stored.openAiModel.trim() : LEGACY_DEFAULT_OPENAI_MODEL;
+	// 0.x had a single OpenAI model. It stays the default, with its customised settings.
+	const modelId = asString(stored.openAiModel, '').trim() || LEGACY_DEFAULT_OPENAI_MODEL;
 	const generation = asRecord(stored.generation);
-	const previous = createModelSettings(previousId);
-	if (PROVIDER_PRESETS.openai.fallbacks.reasoningEfforts.includes(generation.reasoningEffort as typeof previous.reasoningEffort)) {
-		previous.reasoningEffort = generation.reasoningEffort as typeof previous.reasoningEffort;
-	}
+	const model = createModelSettings(modelId);
+	model.reasoningEffort = asString(generation.reasoningEffort, '').trim() || model.reasoningEffort;
 	const oldLimit = positiveInteger(generation.maxOutputTokens, LEGACY_DEFAULT_MAX_OUTPUT_TOKENS);
-	if (oldLimit !== LEGACY_DEFAULT_MAX_OUTPUT_TOKENS) previous.maxOutputTokens = oldLimit;
-	if (previousId === suggestedId) provider.models[0] = previous;
-	else if (previous.reasoningEffort !== 'default' || oldLimit !== LEGACY_DEFAULT_MAX_OUTPUT_TOKENS) provider.models.push(previous);
+	if (oldLimit !== LEGACY_DEFAULT_MAX_OUTPUT_TOKENS) model.maxOutputTokens = oldLimit;
+	settings.providers.openai.models.push(model);
+	settings.defaultModel = { providerId: 'openai', modelId };
 
-	const port = positiveInteger(stored.ankiConnectPort, 8765);
-	settings.anki.url = `http://127.0.0.1:${port <= 65535 ? port : 8765}`;
+	const port = positiveInteger(stored.ankiConnectPort, LEGACY_DEFAULT_ANKI_PORT);
+	settings.anki.url = `http://127.0.0.1:${port <= 65535 ? port : LEGACY_DEFAULT_ANKI_PORT}`;
 	if (typeof stored.ankiDestinationDeck === 'string' && stored.ankiDestinationDeck.trim()) {
 		settings.anki.deckTemplate = stored.ankiDestinationDeck;
 	}
@@ -47,7 +36,7 @@ function migrateOldSettings(stored: Record<string, unknown>): SettingsV1 {
 }
 
 // This is shared by startup and, later, onExternalSettingsChange. Legacy keys are
-// checked even for settings_version: 1: an older computer can sync one back in.
+// checked even for the current schema: an older computer can sync one back in.
 // No disk writes occur here; callers persist settingsData(result) after success.
 export function prepareSettings(app: App, value: unknown): PreparedSettings {
 	const stored = { ...asRecord(value) };
@@ -55,7 +44,7 @@ export function prepareSettings(app: App, value: unknown): PreparedSettings {
 	const hadStoredFields = Object.keys(stored).length > 0;
 	const keyMigration = migrateLegacyApiKey(app, stored);
 	const generationMigration = migrateLegacyGenerationOptions(stored);
-	const settings = stored.settings_version === 1 ? normalizeSettings(stored)
+	const settings = stored.settings_version === SETTINGS_VERSION ? normalizeSettings(stored)
 		: hadStoredFields ? migrateOldSettings(stored) : createDefaultSettings();
 	const pendingLegacyKey: LegacyKeyFields = {};
 	if ('openAiApiKey' in stored) pendingLegacyKey.openAiApiKey = stored.openAiApiKey as LegacyKeyFields['openAiApiKey'];
@@ -63,11 +52,11 @@ export function prepareSettings(app: App, value: unknown): PreparedSettings {
 	return {
 		settings, pendingLegacyKey, keyMigration,
 		hadCustomSampling: generationMigration.hadCustomSampling,
-		migrated: (value !== undefined && value !== null && hadStoredFields && stored.settings_version !== 1)
+		migrated: (value !== undefined && value !== null && hadStoredFields && stored.settings_version !== SETTINGS_VERSION)
 			|| generationMigration.removed || ['moved', 'kept-keychain', 'cleaned'].includes(keyMigration),
 	};
 }
 
-export function settingsData(prepared: PreparedSettings): SettingsV1 & LegacyKeyFields {
+export function settingsData(prepared: PreparedSettings): PluginSettings & LegacyKeyFields {
 	return { ...normalizeSettings(prepared.settings), ...prepared.pendingLegacyKey };
 }

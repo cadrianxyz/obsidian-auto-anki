@@ -1,9 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getPickerModels, isTextGenerationCandidate, sortModelChoices } from '../src/ai/model-selection';
-import { ModelDiscovery } from '../src/ai/model-discovery';
-import { MODEL_CATALOG_URL, normalizeModelCatalogCache } from '../src/ai/model-catalog';
-import { createModelSettings } from '../src/settings/model';
+import { getEnabledModels, isTextGenerationCandidate, sortModelChoices } from '../src/ai/models/selection';
+import { ModelDiscovery } from '../src/ai/models/discovery';
+import { MODEL_CATALOG_URL, normalizeModelCatalogCache } from '../src/ai/models/catalog';
+import { createModelSettings } from '../src/settings/schema';
 
 const model = (id, details = {}) => ({ id, displayName: id, ...details });
 
@@ -12,14 +12,14 @@ describe('model choices from discovery metadata', () => {
 		const models = Array.from({ length: 308 }, (_, index) => model(`model-${index}`));
 		const configured = models.slice(0, 8).map(model => createModelSettings(model.id));
 		configured.push({ ...createModelSettings('model-8'), enabled: false });
-		const result = getPickerModels(models, configured);
+		const result = getEnabledModels(models, configured);
 		assert.equal(result.length, 8);
 		assert.deepEqual(result.map(model => model.id), configured.filter(model => model.enabled).map(model => model.id));
 		models.push(model('newly-introduced-model'));
-		assert.deepEqual(getPickerModels(models, configured), result, 'refreshing discovery cannot change what is enabled');
+		assert.deepEqual(getEnabledModels(models, configured), result, 'refreshing discovery cannot change what is enabled');
 		configured.push(createModelSettings('newly-introduced-model'));
-		assert.equal(getPickerModels(models, configured).length, 9, 'adding a model enables it');
-		assert.equal(models.length, 309, 'the full discovery list remains available for Add models');
+		assert.equal(getEnabledModels(models, configured).length, 9, 'adding a model enables it');
+		assert.equal(models.length, 309, 'the full discovery list remains available for Manage models');
 	});
 
 	test('uses reported output formats, keeping unknown and multimodal models while excluding non-text tasks', () => {
@@ -32,13 +32,13 @@ describe('model choices from discovery metadata', () => {
 
 	test('preserves explicitly saved choices even when current metadata reports an incompatible task', () => {
 		const saved = model('saved-model', { outputModalities: ['image'] });
-		assert.deepEqual(getPickerModels([saved], [createModelSettings(saved.id)], saved.id), [saved]);
+		assert.deepEqual(getEnabledModels([saved], [createModelSettings(saved.id)], saved.id), [saved]);
 	});
 
 	test('an empty enabled list stays empty, even when the provider reports suitable models', () => {
 		const models = [model('reported', { outputModalities: ['text'] })];
-		assert.deepEqual(getPickerModels(models, []), []);
-		assert.deepEqual(getPickerModels(models, [{ ...createModelSettings('reported'), enabled: false }], 'reported'), []);
+		assert.deepEqual(getEnabledModels(models, []), []);
+		assert.deepEqual(getEnabledModels(models, [{ ...createModelSettings('reported'), enabled: false }], 'reported'), []);
 	});
 
 	test('orders default and saved choices first, then release dates and stable names without ranking model names', () => {
@@ -55,7 +55,8 @@ describe('model choices from discovery metadata', () => {
 			one: { id: 'one', release_date: '2026-10-01', modalities: { output: ['text'] } },
 			embed: { id: 'special', family: 'embedding', modalities: { output: ['text'] } },
 			bad: { id: 'bad-date', release_date: '2026-02-31', modalities: { output: [7] } },
-		} } } } : { status: 200, json: { data: [{ id: 'one' }] } });
+		} } } } : assert.fail('Only the catalogue uses send'), undefined, undefined, undefined, async () =>
+			new Response(JSON.stringify({ data: [{ id: 'one' }] }), { headers: { 'content-type': 'application/json' } }));
 		await discovery.refreshCatalog();
 		await discovery.refreshProvider('openai', 'test-key');
 		const snapshot = discovery.getCatalogCache();

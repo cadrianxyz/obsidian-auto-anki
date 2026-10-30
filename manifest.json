@@ -3,7 +3,7 @@
 	"name": "Auto Anki",
 	"version": "0.3.1",
 	"minAppVersion": "1.13.1",
-	"description": "Using AI to automate card creation for Spaced Repetition in Anki",
+	"description": "Using AI to automate Anki note creation for Spaced Repetition in Anki",
 	"author": "cadrianxyz",
 	"authorUrl": "https://github.com/cadrianxyz",
 	"isDesktopOnly": true
