@@ -23,6 +23,21 @@ export interface PreparedDiagrams {
 	warnings: string[];
 }
 
+export interface ImageInputPolicy {
+	action: 'send' | 'skip';
+	reason?: 'disabled' | 'reported-unsupported';
+	warning?: 'support-unknown' | 'forced-unsupported';
+}
+
+/** Resolve discovered support and the user's override once for preparation and review. */
+export function resolveImageInputPolicy(model: Pick<ModelSettings, 'acceptsImages' | 'capabilities'>): ImageInputPolicy {
+	if (model.acceptsImages === 'no') return { action: 'skip', reason: 'disabled' };
+	if (model.acceptsImages === 'yes') return model.capabilities?.acceptsImages === false
+		? { action: 'send', warning: 'forced-unsupported' } : { action: 'send' };
+	if (model.capabilities?.acceptsImages === false) return { action: 'skip', reason: 'reported-unsupported' };
+	return model.capabilities?.acceptsImages === true ? { action: 'send' } : { action: 'send', warning: 'support-unknown' };
+}
+
 export interface EncodedImage { bytes: ArrayBuffer; mime: string }
 export type ImageEncoder = (bytes: ArrayBuffer, mime: string) => Promise<EncodedImage>;
 
@@ -52,11 +67,13 @@ export async function prepareDiagrams(
 	encode: ImageEncoder = downscaleImage,
 ): Promise<PreparedDiagrams> {
 	const result: PreparedDiagrams = { diagrams: [], warnings: [] };
+	const policy = resolveImageInputPolicy(model);
 	const seen = new Set<string>();
 	for (const link of embeddedFiles(text)) {
 		if (!sendDiagrams) { result.warnings.push(`${link}: not sent because Send diagrams is off.`); continue; }
-		if (model.acceptsImages === 'no' || (model.acceptsImages === 'auto' && model.capabilities?.acceptsImages === false)) {
-			result.warnings.push(`${link}: the selected model does not accept images.`); continue;
+		if (policy.action === 'skip') {
+			const reason = policy.reason === 'disabled' ? 'image input is disabled in the selected model settings' : 'the selected model does not accept images';
+			result.warnings.push(`${link}: ${reason}.`); continue;
 		}
 		// Reject every URL scheme before asking Obsidian to resolve a vault attachment.
 		if (/^[a-z][a-z\d+.-]*:|^\/\//i.test(link)) { result.warnings.push(`${link}: only images inside the vault are sent.`); continue; }

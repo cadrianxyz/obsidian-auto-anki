@@ -155,7 +155,7 @@ describe('loading the plugin', () => {
 			assertNoKeyInDataJson(app.disk);
 			const after = readDataJson(app.disk);
 			assert.equal(after.anki.url, 'http://127.0.0.1:8765');
-			assert.equal(after.anki.deckTemplate, 'Biology');
+			assert.equal(after.anki.defaultDeck, 'Biology');
 			assert.equal(after.settings_version, 1);
 			assert.deepEqual(after.defaultModel, { providerId: 'openai', modelId: data.openAiModel ?? LEGACY_DEFAULT_OPENAI_MODEL });
 			assert.ok(!('gptAdvancedOptions' in after), 'old sampling settings left in data.json');

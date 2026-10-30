@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fake, FakeElement } from 'obsidian';
 import { makeDevice, resetAll } from './helpers.mjs';
 import { cleanNote, embeddedFiles } from '../src/source-note/content';
-import { prepareDiagrams, downscaleImage, MAX_IMAGE_EDGE } from '../src/source-note/images';
+import { prepareDiagrams, resolveImageInputPolicy, downscaleImage, MAX_IMAGE_EDGE } from '../src/source-note/images';
 
 beforeEach(resetAll);
 const bytes = (...values) => new Uint8Array(values).buffer;
@@ -36,6 +36,14 @@ describe('reading only the study material', () => {
 });
 
 describe('preparing diagrams locally', () => {
+	test('resolves image support without losing unknown and explicit override states', () => {
+		assert.deepEqual(resolveImageInputPolicy({ acceptsImages: 'auto' }), { action: 'send', warning: 'support-unknown' });
+		assert.deepEqual(resolveImageInputPolicy({ acceptsImages: 'auto', capabilities: { acceptsImages: true } }), { action: 'send' });
+		assert.deepEqual(resolveImageInputPolicy({ acceptsImages: 'auto', capabilities: { acceptsImages: false } }), { action: 'skip', reason: 'reported-unsupported' });
+		assert.deepEqual(resolveImageInputPolicy({ acceptsImages: 'no', capabilities: { acceptsImages: true } }), { action: 'skip', reason: 'disabled' });
+		assert.deepEqual(resolveImageInputPolicy({ acceptsImages: 'yes', capabilities: { acceptsImages: false } }), { action: 'send', warning: 'forced-unsupported' });
+	});
+
 	test('disabled diagrams and a model without image support never read attachment bytes', async () => {
 		const app = makeDevice({ attachments: { 'Images/a.png': bytes(1) } });
 		for (const [send, selected] of [[false, model], [true, { acceptsImages: 'no' }], [true, { acceptsImages: 'auto', capabilities: { acceptsImages: false } }]]) {

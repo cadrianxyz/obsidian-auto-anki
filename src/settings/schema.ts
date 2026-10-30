@@ -78,8 +78,8 @@ export interface PluginSettings {
 		url: string;
 		/** Existing note-type names the AI may use. Missing types retain their selection. */
 		enabledNoteTypes: string[];
-		/** Target deck name with optional {{vault}}, {{folder}} and {{note}} placeholders. */
-		deckTemplate: string;
+		/** Existing Anki deck that starts selected in the export dialog. If Anki no longer has it, Anki's Default deck is used. */
+		defaultDeck: string;
 		/** When false, add no tags to Anki notes and hide the tag-template setting. */
 		tagNotes: boolean;
 		/** Space-separated tags, with deck placeholders plus {{provider}} and {{model}}. */
@@ -109,7 +109,7 @@ export function createDefaultSettings(): PluginSettings {
 		anki: {
 			url: DEFAULT_ANKI_URL,
 			enabledNoteTypes: ['Basic', 'Cloze'],
-			deckTemplate: 'Obsidian::{{vault}}', tagNotes: true, tagTemplate: 'auto-anki::{{provider}}::{{model}}',
+			defaultDeck: 'Default', tagNotes: true, tagTemplate: 'auto-anki::{{provider}}::{{model}}',
 		},
 	};
 }
@@ -199,7 +199,7 @@ export function normalizeSettings(value: unknown): PluginSettings {
 	if (Array.isArray(anki.enabledNoteTypes)) {
 		settings.anki.enabledNoteTypes = [...new Set(anki.enabledNoteTypes.filter((name): name is string => typeof name === 'string' && !!name.trim()))];
 	}
-	settings.anki.deckTemplate = asNonEmptyString(anki.deckTemplate) ?? settings.anki.deckTemplate;
+	settings.anki.defaultDeck = asNonEmptyString(anki.defaultDeck) ?? settings.anki.defaultDeck;
 	settings.anki.tagNotes = asBoolean(anki.tagNotes, settings.anki.tagNotes);
 	settings.anki.tagTemplate = asString(anki.tagTemplate, settings.anki.tagTemplate);
 	return settings;

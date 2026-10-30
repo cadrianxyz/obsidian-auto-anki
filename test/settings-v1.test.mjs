@@ -62,13 +62,13 @@ describe('1.0 settings defaults and validation', () => {
 		const settings = normalizeSettings({
 			settings_version: 1,
 			notes: { sendDiagrams: 'yes', coverageLevel: 'invented', extraInstructions: 'British spelling' },
-			anki: { url: 'file:///vault/private', deckTemplate: '  ', tagNotes: false, tagTemplate: 123 },
+			anki: { url: 'file:///vault/private', defaultDeck: '  ', tagNotes: false, tagTemplate: 123 },
 		});
 		assert.equal(settings.notes.sendDiagrams, true);
 		assert.equal(settings.notes.coverageLevel, 'main-ideas-and-details');
 		assert.equal(settings.notes.extraInstructions, 'British spelling');
 		assert.equal(settings.anki.url, 'http://127.0.0.1:8765');
-		assert.equal(settings.anki.deckTemplate, 'Obsidian::{{vault}}');
+		assert.equal(settings.anki.defaultDeck, 'Default');
 		assert.equal(settings.anki.tagNotes, false);
 		assert.equal(settings.anki.tagTemplate, 'auto-anki::{{provider}}::{{model}}');
 	});
@@ -82,10 +82,10 @@ describe('1.0 settings defaults and validation', () => {
 					{ id: '   ' }, { id: 12 },
 				] } },
 				notes: { extraInstructions: ' \nKeep spacing\n ', noteWritingInstructions: { text: ' Instructions\n ', defaultVersion: ' version ' } },
-				anki: { url: ' https://example.com/anki?x=1 ', deckTemplate: ' Deck ' },
+				anki: { url: ' https://example.com/anki?x=1 ', defaultDeck: ' Deck ' },
 			});
 			assert.equal(settings.anki.url, 'https://example.com/anki?x=1');
-			assert.equal(settings.anki.deckTemplate, ' Deck ');
+			assert.equal(settings.anki.defaultDeck, ' Deck ');
 			assert.equal(settings.providers.openai.name, ' OpenAI custom ');
 			assert.deepEqual(settings.providers.openai.models.map(({ id, reasoningEffort }) => [id, reasoningEffort]), [
 				['model-id', 'high'], ['blank-effort', 'default'], ['invalid-effort', 'default'],
@@ -124,7 +124,7 @@ describe('1.0 settings defaults and validation', () => {
 		settings.notes.extraInstructions = '## Style\n\n- British spelling\n- Keep answers **short**\r\n\n';
 		settings.anki.enabledNoteTypes = ['基本'];
 		settings.anki.url = 'https://my-anki.example/api';
-		settings.anki.deckTemplate = 'My deck';
+		settings.anki.defaultDeck = 'My deck';
 		settings.anki.tagNotes = false;
 		settings.anki.tagTemplate = '';
 		const result = normalizeSettings(JSON.parse(JSON.stringify(settings)));
@@ -333,7 +333,7 @@ describe('0.x → 1.0 settings migration', () => {
 	test('changed deck and port carry over; counts, alternatives and invalid generation settings are removed', () => {
 		const prepared = prepareSettings(app(), legacy({ ankiConnectPort: 9999, ankiDestinationDeck: 'Biology', generation: 'bad' }));
 		assert.equal(prepared.settings.anki.url, 'http://127.0.0.1:9999');
-		assert.equal(prepared.settings.anki.deckTemplate, 'Biology');
+		assert.equal(prepared.settings.anki.defaultDeck, 'Biology');
 		assert.ok(!('generation' in settingsData(prepared)));
 		assert.ok(!('openAiModel' in settingsData(prepared)));
 	});

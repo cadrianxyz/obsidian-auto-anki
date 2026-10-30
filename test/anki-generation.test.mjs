@@ -119,7 +119,7 @@ describe('verified destinations through generation and export', () => {
 		await button(decks, 'Confirm and export').click();
 		assert.equal(server.added.length, 0);
 		assert.equal(decks.isOpen, true);
-		await button(decks, 'Back to notes').click();
+		await button(decks, 'Back to selection').click();
 		assert.equal(entries(last()).length, 2);
 	});
 	test('partial export retries only entries that Anki refused', async () => {
@@ -131,6 +131,15 @@ describe('verified destinations through generation and export', () => {
 		refuse = false; await button(decks, 'Confirm and export').click();
 		assert.deepEqual(server.added.map(note => note.modelName), ['Basic', 'Cloze']);
 		assert.equal(decks.isOpen, false);
+	});
+	test('after a partial export, going back shows the unexported notes but not the added ones', async () => {
+		const { plugin, server } = await setup({ refuse: note => note.modelName === 'Cloze' ? 'temporary refusal' : null });
+		const decks = await selectAll(await review(plugin));
+		await button(decks, 'Confirm and export').click();
+		assert.equal(server.added.length, 1);
+		await button(decks, 'Back to selection').click();
+		assert.deepEqual(entries(last()).map(entry => entry.children[0].text), ['Cloze']);
+		assert.match(entries(last())[0].className, /--selected/);
 	});
 	test('disconnecting after review retains the entries, and retry works after Anki returns', async () => {
 		const { plugin, server } = await setup(); const decks = await selectAll(await review(plugin));

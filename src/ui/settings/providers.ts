@@ -148,7 +148,7 @@ export class ProviderSettings {
 			} },
 			{ name: 'Model discovery', desc: this.errors.get(providerId) ?? 'Refreshing model information…',
 				visible: () => hasKey() && (this.refreshing.has(providerId) || this.errors.has(providerId)) },
-			{ type: 'list', heading: 'Your models', emptyState: 'Use Manage models to enable models for your picker.',
+			{ type: 'list', cls: 'auto-anki-provider-model-list', heading: 'Your models', emptyState: 'Use Manage models to enable models for your picker.',
 				visible: () => hasKey() || configured.length > 0,
 				search: { placeholder: 'Search models', match: (definition, query) => {
 					const id = typeof definition.desc === 'string' ? definition.desc : '';

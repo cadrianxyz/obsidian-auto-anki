@@ -22,7 +22,7 @@ export interface ProviderModelInfo {
 	id: string;
 	displayName: string;
 	capabilities?: ModelCapabilities;
-	/** Public catalogue metadata used to filter and order the Manage models list. */
+	/** Public catalogue output types. Missing means unknown; empty means explicitly none. */
 	outputModalities?: string[];
 	isEmbedding?: boolean;
 	releaseDate?: string;

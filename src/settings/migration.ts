@@ -30,7 +30,7 @@ function migrateOldSettings(stored: Record<string, unknown>): PluginSettings {
 	const port = positiveInteger(stored.ankiConnectPort, LEGACY_DEFAULT_ANKI_PORT);
 	settings.anki.url = `http://127.0.0.1:${port <= 65535 ? port : LEGACY_DEFAULT_ANKI_PORT}`;
 	if (typeof stored.ankiDestinationDeck === 'string' && stored.ankiDestinationDeck.trim()) {
-		settings.anki.deckTemplate = stored.ankiDestinationDeck;
+		settings.anki.defaultDeck = stored.ankiDestinationDeck;
 	}
 	return settings;
 }

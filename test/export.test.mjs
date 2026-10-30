@@ -23,8 +23,8 @@ const SELECTION = 'export-text-selection-to-anki';
 
 beforeEach(resetAll);
 
-async function device({ settings, keychain = makeKeychain('ok', { [SECRET_ID]: KEY }), activeNote } = {}) {
-	return loadPlugin(makeDevice({ disk: makeDisk(settings ?? { openAiModel: 'gpt-6-luna' }), keychain, activeNote }));
+async function device({ settings, keychain = makeKeychain('ok', { [SECRET_ID]: KEY }), activeNote, attachments } = {}) {
+	return loadPlugin(makeDevice({ disk: makeDisk(settings ?? { openAiModel: 'gpt-6-luna' }), keychain, activeNote, attachments }));
 }
 
 function button(modal, text) {
@@ -449,7 +449,26 @@ describe('first export screen', () => {
 		assert.equal(plugin.app.disk.writes, writesBefore);
 	});
 
-	test('switching models prepares diagrams again and replaces stale image warnings', async () => {
+	test('a forced image override warns before sending to a model reported as incompatible', async () => {
+		ankiServer();
+		const settings = createDefaultSettings();
+		settings.providers.openai.models = [{ ...createModelSettings('forced-image'), acceptsImages: 'yes', capabilities: { acceptsImages: false } }];
+		settings.defaultModel = { providerId: 'openai', modelId: 'forced-image' };
+		const create = globalThis.createEl; const bitmap = globalThis.createImageBitmap;
+		globalThis.createImageBitmap = async () => ({ width: 8, height: 4, close() {} });
+		globalThis.createEl = (tag, options) => tag === 'canvas' ? { getContext: () => ({ drawImage() {} }),
+			toBlob(callback) { callback(new Blob([new Uint8Array([7])], { type: 'image/png' })); },
+		} : create(tag, options);
+		try {
+			const ask = await startExport(await device({ settings, activeNote: 'Study this diagram: ![[diagram.png]]', attachments: {
+				'diagram.png': new Uint8Array([1]).buffer,
+			} }));
+			assert.match(ask.contentEl.textContent, /reported as not accepting images.*forces 1 embedded file to be sent.*request may fail/i);
+			assert.equal(button(ask, 'Generate Anki notes').disabled, false);
+		} finally { globalThis.createEl = create; globalThis.createImageBitmap = bitmap; }
+	});
+
+test('switching models prepares diagrams again and replaces stale image warnings', async () => {
 		ankiServer();
 		const settings = createDefaultSettings();
 		settings.providers.openai.models = [
@@ -459,12 +478,12 @@ describe('first export screen', () => {
 		settings.defaultModel = { providerId: 'openai', modelId: 'text-only' };
 		const plugin = await device({ settings, activeNote: 'Study this diagram: ![[missing.png]]' });
 		const ask = await startExport(plugin);
-		assert.match(ask.contentEl.textContent, /selected model does not accept images/);
+		assert.match(ask.contentEl.textContent, /image input is disabled in the selected model settings/);
 		await selectModel(ask, '1');
 		assert.match(ask.contentEl.textContent, /missing.png: attachment not found/);
-		assert.doesNotMatch(ask.contentEl.textContent, /selected model does not accept images/);
+		assert.doesNotMatch(ask.contentEl.textContent, /image input is disabled in the selected model settings/);
 		await selectModel(ask, '0');
-		assert.match(ask.contentEl.textContent, /selected model does not accept images/);
+		assert.match(ask.contentEl.textContent, /image input is disabled in the selected model settings/);
 		assert.doesNotMatch(ask.contentEl.textContent, /attachment not found/);
 		assert.equal(button(ask, 'Generate Anki notes').disabled, false);
 		assert.equal(openai.requests.length + fake.providerRequests.length, 0);
@@ -580,19 +599,87 @@ describe('exporting', () => {
 		const decks = lastModal();
 		await decks.opened;
 		const selected = () => deckItems(decks).filter((li) => /--selected/.test(li.className)).map((li) => li.children[0].text);
+		const order = () => deckItems(decks).map((li) => li.children[0].text);
 		assert.deepEqual(selected(), ['Biology']);
+		assert.deepEqual(order(), ['Biology', 'Default', 'Chemistry'], 'the starting deck is listed first');
 		deckItems(decks).find((li) => li.children[0].text === 'Chemistry').click();
 		assert.deepEqual(selected(), ['Chemistry']);
+		assert.deepEqual(order(), ['Biology', 'Default', 'Chemistry'], 'choosing a deck does not reorder the list');
 		await button(decks, 'Confirm and export').click();
 		assert.ok(anki.added.length === 3 && anki.added.every((n) => n.deckName === 'Chemistry'));
 	});
 
-	test('with no default deck, the first deck is preselected', async () => {
-		const anki = ankiServer({ decks: ['Languages', 'Default'] });
+	test('going back from the deck step keeps every generated note and the current selection', async () => {
+		ankiServer({ decks: ['Default', 'Biology'] });
 		openai.handler = () => openAiReply(NOTES);
 		const plugin = await device();
-		await exportAll(plugin);
-		assert.ok(anki.added.every((n) => n.deckName === 'Languages'));
+		const ask = await startExport(plugin);
+		await button(ask, 'Generate Anki notes').click();
+		const choose = lastModal();
+		questionItems(choose)[1].click();
+		await button(choose, 'Confirm selection').click();
+		const decks = lastModal();
+		await decks.opened;
+		deckItems(decks).find((li) => li.children[0].text === 'Biology').click();
+		await button(decks, 'Back to selection').click();
+		const back = lastModal();
+		assert.equal(questionItems(back).length, 3);
+		assert.deepEqual(questionItems(back).map((li) => /--selected/.test(li.className)), [false, true, false]);
+		await button(back, 'Confirm selection').click();
+		const again = lastModal();
+		await again.opened;
+		assert.deepEqual(deckItems(again).filter((li) => /--selected/.test(li.className)).map((li) => li.children[0].text), ['Biology']);
+	});
+
+	test('a new install starts on Anki\'s Default deck', async () => {
+		const anki = ankiServer({ decks: ['Languages', 'Default'] });
+		openai.handler = () => openAiReply(NOTES);
+		await exportAll(await device());
+		assert.ok(anki.added.every((n) => n.deckName === 'Default'));
+	});
+
+	test('a missing default deck falls back to Default, and the dialog says so', async () => {
+		const anki = ankiServer({ decks: ['Languages', 'Default'] });
+		openai.handler = () => openAiReply(NOTES);
+		const plugin = await device({ settings: { ankiDestinationDeck: 'Gone' } });
+		const ask = await startExport(plugin);
+		await button(ask, 'Generate Anki notes').click();
+		const choose = lastModal();
+		await button(choose, 'Select all').click();
+		await button(choose, 'Confirm selection').click();
+		const decks = lastModal();
+		await decks.opened;
+		assert.ok(decks.contentEl.all().some((e) => e.textContent?.includes('“Gone” is not in Anki, so “Default” is selected.')));
+		await button(decks, 'Confirm and export').click();
+		assert.ok(anki.added.every((n) => n.deckName === 'Default'));
+	});
+
+	test('search finds decks by any part of the full name and keeps the chosen deck', async () => {
+		const anki = ankiServer({ decks: ['Default', 'Obsidian::Biology::Cells', 'Obsidian::Chemistry', 'Languages'] });
+		openai.handler = () => openAiReply(NOTES);
+		const plugin = await device({ settings: { ankiDestinationDeck: 'Default' } });
+		const ask = await startExport(plugin);
+		await button(ask, 'Generate Anki notes').click();
+		const choose = lastModal();
+		await button(choose, 'Select all').click();
+		await button(choose, 'Confirm selection').click();
+		const decks = lastModal();
+		await decks.opened;
+		// Choosing a deck re-renders the dialog, so the search box is looked up again each time.
+		const search = () => decks.contentEl.all().find((e) => e.tagName === 'input');
+		const type = (text) => { search().value = text; search().oninput(); };
+		const listed = () => deckItems(decks).map((li) => li.children[0].text);
+		type('BIO');
+		assert.deepEqual(listed(), ['Obsidian::Biology::Cells']);
+		deckItems(decks)[0].click();
+		assert.equal(search().value, 'BIO');
+		type('zzz');
+		assert.ok(decks.contentEl.all().some((e) => e.className === 'deck-search-empty'));
+		type('');
+		assert.equal(listed().length, 4);
+		assert.ok(deckItems(decks).some((li) => li.children[0].text === 'Obsidian::Biology::Cells' && /--selected/.test(li.className)));
+		await button(decks, 'Confirm and export').click();
+		assert.ok(anki.added.every((n) => n.deckName === 'Obsidian::Biology::Cells'));
 	});
 
 	test('picking some questions exports only those', async () => {

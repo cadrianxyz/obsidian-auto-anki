@@ -11,7 +11,7 @@ export type ModelCatalog = Partial<Record<ProviderId, Map<string, ProviderModelI
  * Raise this when parsing extracts new metadata. A cache written by an older parser
  * stays usable offline, but is downloaded again instead of being trusted for a day.
  */
-export const MODEL_CATALOG_CACHE_VERSION = 2;
+export const MODEL_CATALOG_CACHE_VERSION = 3;
 
 /** Public catalogue snapshot for the separate cache file; no credentials or account access lists. */
 export interface ModelCatalogCache {
@@ -112,7 +112,7 @@ export function normalizeModelCatalogCache(value: unknown): ModelCatalogCache | 
 /** Apply validated filtering and release-date metadata to a model. */
 function applySelectionMetadata(stored: Record<string, unknown>, model: ProviderModelInfo): void {
 	const output: unknown = asRecord(stored.modalities).output;
-	if (Array.isArray(output) && output.length && output.every((item: unknown) => typeof item === 'string' && item.trim())) {
+	if (Array.isArray(output) && output.every((item: unknown) => typeof item === 'string' && item.trim())) {
 		model.outputModalities = [...new Set(output as string[])];
 	}
 	// Some entries lack an embedding flag, so also check the model ID and family.

@@ -292,6 +292,8 @@ export class Modal {
 	}
 	open() {
 		this.isOpen = true;
+		// Obsidian saves the text cursor in `selection` when a modal opens, replacing any subclass field of that name.
+		this.selection = { win: null, range: null, focusEl: null };
 		fake.modals.push(this);
 		this.opened = Promise.resolve(this.onOpen?.());
 	}

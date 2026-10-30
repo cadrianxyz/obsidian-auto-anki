@@ -1,6 +1,7 @@
 import type { SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import type AutoAnkiPlugin from '../../main';
 import { verifyNoteType } from '../../anki/note-types';
+import { DefaultDeckModal } from '../decks/default-deck-modal';
 import { ankiUrl, DEFAULT_ANKI_URL } from '../../settings/schema';
 
 /** Anki owns the definitions. Settings only choose which existing types may be generated. */
@@ -37,6 +38,11 @@ export class AnkiSettings {
 		return [
 			{ name: 'AnkiConnect address', desc: `Anki must be running with AnkiConnect enabled. Default: ${DEFAULT_ANKI_URL}. Refresh note types after changing it.`,
 				control: { type: 'text', key: 'anki.url', disabled: () => !this.plugin.settingsStore.canSave } },
+			{ name: 'Default deck', desc: `New notes start in this deck in the export dialog. Current: ${anki.defaultDeck}. Anki's Default deck is used if it is missing.`,
+				render: setting => { setting.addButton(button => button.setButtonText('Choose deck…').setDisabled(!this.plugin.settingsStore.canSave)
+					.onClick(() => new DefaultDeckModal(this.plugin.app, anki.url, this.plugin.settings.anki.defaultDeck, async deck => {
+						await this.plugin.updateSettings(settings => { settings.anki.defaultDeck = deck; });
+					}).open())); } },
 			{ type: 'group', heading: 'Note types',
 				search: { placeholder: 'Search note types', match: (definition, query) => {
 					const fields = typeof definition.desc === 'string' ? definition.desc : '';

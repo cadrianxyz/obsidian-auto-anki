@@ -1,9 +1,9 @@
 import type { ProviderModelInfo } from './metadata';
 import type { ModelSettings } from '../../settings/schema';
 
-/** Unknown capabilities remain selectable. Only reported incompatibility excludes a model. */
+/** Unknown output types remain selectable. Only reported incompatibility excludes a model. */
 export function isTextGenerationCandidate(model: ProviderModelInfo): boolean {
-	return !model.isEmbedding && (!model.outputModalities?.length || model.outputModalities.includes('text'));
+	return !model.isEmbedding && (model.outputModalities === undefined || model.outputModalities.includes('text'));
 }
 
 /** Discovery never enables a model. Only the user's saved, enabled choices enter the picker. */

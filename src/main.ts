@@ -229,7 +229,7 @@ export default class AutoAnkiPlugin extends Plugin {
 		const selectedModel = models.find(choice => choice.providerId === providerId && choice.model.id === model.id)!;
 		const source: SourceNote = { markdown: text, path, title };
 		new ExportModal(this.app, this.generationStatus, source, selectedModel, models,
-			snapshot.anki.url, snapshot.anki.deckTemplate, snapshot.notes, selection, () => this.prepareAnkiDestinations(snapshot.anki), async ({ providerId, model }, mode) => {
+			snapshot.anki.url, snapshot.anki.defaultDeck, snapshot.notes, selection, () => this.prepareAnkiDestinations(snapshot.anki), async ({ providerId, model }, mode) => {
 				const current = this.settings.providers[providerId].models.find(saved => saved.id === model.id);
 				if (!current || current.capabilities?.outputMode === mode) return;
 				await this.updateSettings(settings => {

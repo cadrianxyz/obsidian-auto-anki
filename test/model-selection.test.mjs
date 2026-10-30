@@ -24,6 +24,7 @@ describe('model choices from discovery metadata', () => {
 
 	test('uses reported output formats, keeping unknown and multimodal models while excluding non-text tasks', () => {
 		assert.equal(isTextGenerationCandidate(model('unfamiliar')), true);
+		assert.equal(isTextGenerationCandidate(model('no-output', { outputModalities: [] })), false);
 		assert.equal(isTextGenerationCandidate(model('mixed', { outputModalities: ['text', 'audio'] })), true);
 		assert.equal(isTextGenerationCandidate(model('image-generator', { outputModalities: ['image'] })), false);
 		assert.equal(isTextGenerationCandidate(model('speech-generator', { outputModalities: ['audio'] })), false);
@@ -55,6 +56,7 @@ describe('model choices from discovery metadata', () => {
 			one: { id: 'one', release_date: '2026-10-01', modalities: { output: ['text'] } },
 			embed: { id: 'special', family: 'embedding', modalities: { output: ['text'] } },
 			bad: { id: 'bad-date', release_date: '2026-02-31', modalities: { output: [7] } },
+			none: { id: 'no-output', modalities: { output: [] } },
 		} } } } : assert.fail('Only the catalogue uses send'), undefined, undefined, undefined, async () =>
 			new Response(JSON.stringify({ data: [{ id: 'one' }] }), { headers: { 'content-type': 'application/json' } }));
 		await discovery.refreshCatalog();
@@ -62,12 +64,14 @@ describe('model choices from discovery metadata', () => {
 		const snapshot = discovery.getCatalogCache();
 		const restored = new ModelDiscovery(undefined, undefined, undefined, { load: async () => normalizeModelCatalogCache(snapshot) });
 		await restored.restoreCatalog();
-		const [one, embed, bad] = restored.getModels('openai', [], ['one', 'special', 'bad-date']);
+		const [one, embed, bad, none] = restored.getModels('openai', [], ['one', 'special', 'bad-date', 'no-output']);
 		assert.equal(one.releaseDate, '2026-10-01');
 		assert.deepEqual(one.outputModalities, ['text']);
 		assert.equal(isTextGenerationCandidate(embed), false);
 		assert.equal(bad.releaseDate, undefined);
 		assert.equal(bad.outputModalities, undefined);
+		assert.deepEqual(none.outputModalities, []);
+		assert.equal(isTextGenerationCandidate(none), false);
 		one.outputModalities.push('image');
 		snapshot.providers.openai[0].outputModalities.push('audio');
 		assert.deepEqual(restored.getModels('openai', [], ['one'])[0].outputModalities, ['text']);

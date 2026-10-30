@@ -6,12 +6,26 @@ import { COVERAGE_LABELS, type RunPreferences } from '../generate/prompt';
 import { getReasoningEffortsForModel } from '../ai/models/metadata';
 import { generateNotes } from '../generate/run';
 import type { GeneratedAnkiNote, GenerationResult } from '../generate/result';
-import { cleanNote, type SourceNote } from '../source-note/content';
-import { prepareDiagrams, type PreparedDiagrams } from '../source-note/images';
-import { getAnkiDecks } from '../anki/decks';
+import { cleanNote, embeddedFiles, type SourceNote } from '../source-note/content';
+import { prepareDiagrams, resolveImageInputPolicy, type ImageInputPolicy, type PreparedDiagrams } from '../source-note/images';
+import { chooseDeck, getAnkiDecks, pinDeck } from '../anki/decks';
 import { addNotesToAnki } from '../anki/export';
 import type { GenerationStatus } from './generation-status';
+import { renderDeckPicker } from './decks/deck-picker';
 import { revalidateDestinations, type AnkiDestinations } from '../anki/note-types';
+
+function showImageInputWarning(container: HTMLElement, policy: ImageInputPolicy, embeddedCount: number, preparedCount: number): void {
+	const count = policy.action === 'skip' ? embeddedCount : preparedCount;
+	if (!count) return;
+	const files = `${count} embedded ${count === 1 ? 'file' : 'files'}`;
+	let text: string | undefined;
+	if (policy.action === 'skip') text = policy.reason === 'disabled'
+		? `${files} will not be sent because image input is disabled in the selected model settings.`
+		: `${files} will not be sent because the selected model does not accept images.`;
+	else if (policy.warning === 'forced-unsupported') text = `The selected model is reported as not accepting images, but its setting forces ${files} to be sent. The request may fail.`;
+	else if (policy.warning === 'support-unknown') text = `Image support has not been reported for the selected model. ${files} will be sent, but the request may fail.`;
+	if (text) container.createDiv({ text, cls: 'auto-anki-export-warning', attr: { role: 'status' } });
+}
 
 function showGenerationMessages(container: HTMLElement, result: Pick<GenerationResult, 'noteIssues' | 'warnings'>): void {
 	if (result.noteIssues.length) {
@@ -54,9 +68,10 @@ export class ExportModal extends Modal {
 		private selectedModel: ExportModel,
 		private readonly models: readonly ExportModel[],
 		private readonly address: string,
-		private readonly deck: string,
+		private readonly defaultDeck: string,
 		private readonly preferences: PluginSettings['notes'],
-		private readonly selection: boolean,
+		/** True when only selected text is sent. Not named `selection`, which Obsidian's Modal uses for its own state. */
+		private readonly fromSelection: boolean,
 		private readonly prepareDestinations: () => Promise<AnkiDestinations>,
 		private readonly rememberOutputMode: (selected: ExportModel, mode: ResolvedOutputMode) => Promise<void>,
 	) {
@@ -71,7 +86,7 @@ export class ExportModal extends Modal {
 
 	async onOpen(): Promise<void> {
 		this.modalEl.classList.add('auto-anki-export');
-		this.titleEl.setText(this.selection ? `Make Anki notes from a selection in “${this.source.title}”` : `Make Anki notes from “${this.source.title}”`);
+		this.titleEl.setText(this.fromSelection ? `Make Anki notes from a selection in “${this.source.title}”` : `Make Anki notes from “${this.source.title}”`);
 		try {
 			const decks = await getAnkiDecks(this.address);
 			if (!decks.length) throw new Error('Your Anki collection has no decks. Create one in Anki first.');
@@ -97,7 +112,7 @@ export class ExportModal extends Modal {
 			const names = this.destinations?.types.filter(type => this.selectedNoteTypes.has(type.name)).map(type => type.name) ?? [];
 			noteTypesSummary.setText(`Note types: ${names.length ? names.join(', ') : 'none selected'}`);
 		};
-		const noteTypeControls = noteTypes.createDiv();
+		const noteTypeControls = noteTypes.createDiv({ cls: 'setting-horizontal-padding' });
 		noteTypeControls.createEl('p', { text: 'Choose at least one for this run. Your saved choices are not changed.', cls: 'setting-item-description search-description' });
 		const advanced = this.contentEl.createEl('details', { cls: 'auto-anki-export-options' });
 		advanced.createEl('summary', { text: 'Advanced' });
@@ -168,6 +183,7 @@ export class ExportModal extends Modal {
 					});
 				});
 			}
+			if (this.destinations.types.length) noteTypeControls.createEl('hr', { cls: 'auto-anki-note-types-divider' });
 			updateNoteTypesSummary();
 			await this.prepareForModel(status, warnings);
 		}
@@ -192,8 +208,11 @@ export class ExportModal extends Modal {
 			if (this.closed) return;
 			this.diagrams = diagrams;
 			warnings.empty();
+			if (this.preferences.sendDiagrams) {
+				showImageInputWarning(warnings, resolveImageInputPolicy(this.selectedModel.model), embeddedFiles(this.source.markdown).length, diagrams.diagrams.length);
+			}
 			showGenerationMessages(warnings, { noteIssues: [], warnings: [...this.destinations!.problems, ...diagrams.warnings] });
-			status.setText(`Sends: ${this.selection ? 'selected text' : 'the note'} and ${diagrams.diagrams.length} ${diagrams.diagrams.length === 1 ? 'diagram' : 'diagrams'}. Frontmatter and Obsidian comments are excluded.`);
+			status.setText(`Sends: ${this.fromSelection ? 'selected text' : 'the note'} and ${diagrams.diagrams.length} ${diagrams.diagrams.length === 1 ? 'diagram' : 'diagrams'}. Frontmatter and Obsidian comments are excluded.`);
 			if (!this.destinations!.types.length) status.setText('No verified note type is enabled. Open Auto Anki → Anki and enable an existing note type.');
 			else if (!this.source.markdown.trim() && !diagrams.diagrams.length) status.setText('There is no study material after removing frontmatter and comments.');
 			this.prepared = true;
@@ -233,7 +252,7 @@ export class ExportModal extends Modal {
 			if (this.closed) return;
 			this.generationStatus.setState('idle');
 			this.close();
-			new ChoiceModal(this.app, result.notes, this.address, this.deck, result, destinations).open();
+			new ChoiceModal(this.app, new NoteSelection(result.notes), this.address, this.defaultDeck, result, destinations).open();
 		}
 		catch (error) {
 			if (!this.closed) { this.generationStatus.setState('error'); new Notice(error instanceof Error ? error.message : 'Anki note generation failed.', 0); }
@@ -256,263 +275,210 @@ export class ExportModal extends Modal {
 	}
 }
 
-class QuestionSetWithSelections {
-    questions: GeneratedAnkiNote[];
-    selected: Set<number>;
-    renderFunc: VoidFunction;
+// --- Review and deck choice ---
 
-    constructor(
-        questions: GeneratedAnkiNote[],
-        onChangeCallback: VoidFunction,
-        selectAllOnInit?: boolean,
-    ) {
-        this.questions = questions;
-        if (selectAllOnInit) this.selected = new Set([...Array(questions.length).keys()])
-        else this.selected = new Set([]);
+/** The generated notes and which ones are chosen. Both review steps share it, so going back keeps every note. */
+class NoteSelection {
+	readonly chosen = new Set<GeneratedAnkiNote>();
+	constructor(public notes: readonly GeneratedAnkiNote[]) {}
 
-        this.renderFunc = onChangeCallback;
-    }
+	selectedNotes(): GeneratedAnkiNote[] {
+		return this.notes.filter(note => this.chosen.has(note));
+	}
 
-    renderHtmlList() {
-        const htmlList = createEl('ul', { cls: 'question-options-container' });
-
-        const convenienceButtons = createDiv({ cls: 'question-options__buttons' });
-        const selectAllButton = convenienceButtons.createEl('button', { text: 'Select all' });
-        selectAllButton.onclick = (e: MouseEvent) => { this.selectAll() };
-        const deselectAllButton = convenienceButtons.createEl('button', { text: 'Deselect all' });
-        deselectAllButton.onclick = (e: MouseEvent) => { this.deselectAll() };
-
-        htmlList.appendChild(convenienceButtons);
-
-        this.questions.forEach((q: GeneratedAnkiNote, idx: number) => {
-            const htmlQuestion = createEl('li');
-            htmlQuestion.createEl('h3', { text: q.noteType });
-            for (const [field, value] of Object.entries(q.fields)) {
-                htmlQuestion.createEl('strong', { text: field });
-                htmlQuestion.createEl('p', { text: value || '(empty)', cls: 'anki-note-field-value' });
-            }
-            if (this.selected.has(idx)) {
-                htmlQuestion.className = 'question-option --selected'
-            }
-            else {
-                htmlQuestion.className = 'question-option'
-            }
-            htmlQuestion.onclick = () => { this.toggleSelect(idx) };
-            htmlList.appendChild(htmlQuestion);
-        })
-
-        return htmlList;
-    }
-
-    toggleSelect(idx: number) {
-        if (this.selected.has(idx)) {
-            this.selected.delete(idx);
-        }
-        else {
-            this.selected.add(idx);
-        }
-        this.renderFunc();
-    }
-
-    selectAll() {
-        this.questions.forEach((q: GeneratedAnkiNote, idx: number) => {
-            if (this.selected.has(idx)) return;
-            this.selected.add(idx);
-        });
-        this.renderFunc();
-    }
-
-    deselectAll() {
-        this.selected.clear();
-        this.renderFunc();
-    }
-
-    extractSelectedQuesions() {
-        return this.questions.filter((val, idx) => this.selected.has(idx));
-    }
+	/** Drop notes that Anki has added, so they cannot be exported twice. */
+	removeAdded(remaining: readonly GeneratedAnkiNote[]): void {
+		const added = this.selectedNotes().filter(note => !remaining.includes(note));
+		this.notes = this.notes.filter(note => !added.includes(note));
+		for (const note of added) this.chosen.delete(note);
+	}
 }
 
-/** Keep the existing Anki-note selection and deck export while the full review UI is built. */
+/** Lets the user pick which generated notes to export. Only the list scrolls; the buttons stay in view. */
 export class ChoiceModal extends Modal {
-	private readonly questions: QuestionSetWithSelections;
-	constructor(app: App, notes: GeneratedAnkiNote[], private readonly address: string, private readonly deck: string,
+	constructor(app: App, private readonly review: NoteSelection, private readonly address: string, private readonly deck: string,
 		private readonly feedback: Pick<GenerationResult, 'noteIssues' | 'warnings'>, private readonly destinations: AnkiDestinations) {
 		super(app);
-		this.questions = new QuestionSetWithSelections(notes, () => this.renderContent());
 	}
 
-	private renderContent(): void {
-		this.contentEl.empty();
+	onOpen(): void {
+		const { contentEl, review } = this;
+		this.modalEl.classList.add('auto-anki-picker');
 		this.titleEl.setText('Review Anki notes');
-		showGenerationMessages(this.contentEl, this.feedback);
-		this.contentEl.createEl('p', { text: 'Each selected entry is added as one Anki note. Your chosen type may create more than one flashcard from it.' });
-
-		if (!this.questions.questions.length) {
-			this.contentEl.createEl('p', { text: 'No Anki notes were generated. The source note may not contain enough useful material, or all entries were skipped.' });
+		showGenerationMessages(contentEl, this.feedback);
+		contentEl.createEl('p', { text: 'Each selected entry is added as one Anki note. Your chosen type may create more than one flashcard from it.' });
+		if (!review.notes.length) {
+			contentEl.createEl('p', { text: 'No Anki notes were generated. The source note may not contain enough useful material, or all entries were skipped.' });
 			return;
 		}
-		this.contentEl.createEl('p', { text: 'Pick the notes you want to export to Anki.' });
-		this.contentEl.appendChild(this.questions.renderHtmlList());
-		new Setting(this.contentEl).addButton(button => button.setButtonText('Confirm selection').setCta()
-			.setDisabled(this.questions.selected.size === 0).onClick(() => {
-				const notes = this.questions.extractSelectedQuesions();
-				if (!notes.length) return;
+		contentEl.createEl('p', { text: 'Pick the notes you want to export to Anki.' });
+
+		const shortcuts = contentEl.createDiv({ cls: 'question-options__buttons' });
+		const list = contentEl.createEl('ul', { cls: 'question-options-container' });
+		const items = review.notes.map(note => {
+			const item = list.createEl('li');
+			item.createEl('h3', { text: note.noteType });
+			for (const [field, value] of Object.entries(note.fields)) {
+				item.createEl('strong', { text: field });
+				item.createEl('p', { text: value || '(empty)', cls: 'anki-note-field-value' });
+			}
+			item.onclick = () => {
+				if (review.chosen.has(note)) review.chosen.delete(note); else review.chosen.add(note);
+				refresh();
+			};
+			return item;
+		});
+		let confirm: ButtonComponent | undefined;
+		// Restyle the items in place, so choosing a note does not reset the list's scroll position.
+		const refresh = (): void => {
+			review.notes.forEach((note, index) => { items[index].className = review.chosen.has(note) ? 'question-option --selected' : 'question-option'; });
+			confirm?.setDisabled(!review.chosen.size);
+		};
+		shortcuts.createEl('button', { text: 'Select all' }).onclick = () => {
+			for (const note of review.notes) review.chosen.add(note);
+			refresh();
+		};
+		shortcuts.createEl('button', { text: 'Deselect all' }).onclick = () => {
+			review.chosen.clear();
+			refresh();
+		};
+		new Setting(contentEl).addButton(button => {
+			confirm = button;
+			button.setButtonText('Confirm selection').setCta().onClick(() => {
+				if (!review.chosen.size) return;
 				this.close();
-				new AnkiDeckModal(this.app, this.address, this.deck, notes, this.destinations, this.feedback).open();
-			}));
+				new AnkiDeckModal(this.app, this.address, this.deck, review, this.destinations, this.feedback).open();
+			});
+		});
+		refresh();
 	}
-	onOpen(): void { this.renderContent(); }
+
 	onClose(): void { this.contentEl.empty(); }
 }
 
+/** Chooses the deck for the export. Going back to the selection keeps the chosen deck. */
 export class AnkiDeckModal extends Modal {
-    notesToExport: GeneratedAnkiNote[];
-    decks: string[] = [];
-    selectedDeck: string;
-    isDataFetched: boolean;
-    private exporting = false;
-    private deckError?: string;
+	private decks: string[] = [];
+	private loaded = false;
+	private query = '';
+	/** The deck this dialog started with, when Anki no longer has it. */
+	private replacedDeck = '';
+	private exporting = false;
+	private deckError?: string;
+	private readonly buttons: ButtonComponent[] = [];
 
-    constructor(
-        app: App,
-        private readonly address: string,
-        defaultDeck: string,
-        allSelectedNotes: GeneratedAnkiNote[],
-        private readonly destinations: AnkiDestinations,
-        private readonly feedback: Pick<GenerationResult, 'noteIssues' | 'warnings'>,
-    ) {
-        super(app);
-        this.selectedDeck = defaultDeck;
-        this.notesToExport = allSelectedNotes;
+	constructor(
+		app: App,
+		private readonly address: string,
+		private selectedDeck: string,
+		private readonly review: NoteSelection,
+		private readonly destinations: AnkiDestinations,
+		private readonly feedback: Pick<GenerationResult, 'noteIssues' | 'warnings'>,
+	) {
+		super(app);
+	}
 
-        this.isDataFetched = false;
-    }
+	private async fetchData(): Promise<void> {
+		this.deckError = undefined;
+		let decks: string[] = [];
+		try { decks = await getAnkiDecks(this.address); }
+		catch (error) {
+			this.deckError = error instanceof Error ? error.message : 'Could not read Anki decks.';
+			new Notice(this.deckError);
+		}
+		this.loaded = true;
+		if (!decks.length) { this.decks = []; return; }
 
-    async fetchData() {
-        let fetchedDecks: string[] = [];
-        this.deckError = undefined;
-        try { fetchedDecks = await getAnkiDecks(this.address); }
-        catch (error) {
-            this.deckError = error instanceof Error ? error.message : 'Could not read Anki decks.';
-            new Notice(this.deckError);
-        }
-        this.decks = fetchedDecks;
-        this.isDataFetched = true;
+		const requested = this.selectedDeck;
+		const choice = chooseDeck(decks, requested);
+		this.selectedDeck = choice.deck;
+		this.replacedDeck = choice.replaced ? requested : '';
+		// The starting deck stays first for as long as this dialog is open, even after another deck is chosen.
+		this.decks = pinDeck(decks, choice.deck);
+	}
 
+	private render(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		this.buttons.length = 0;
+		this.titleEl.setText('Anki decks');
 
-        // This legacy picker exports only to existing decks. A 1.0 deck template
-        // is resolved by the upcoming Anki flow, so never send it literally here.
-        if (!fetchedDecks.includes(this.selectedDeck) && fetchedDecks.length > 0) {
-            this.selectedDeck = fetchedDecks[0];
-        }
-    }
+		if (!this.loaded) {
+			contentEl.createEl('p', { cls: 'setting-item-description', text: 'Loading decks from Anki…' });
+		}
+		else if (!this.decks.length) {
+			const notice = contentEl.createDiv({ cls: 'error-notice' });
+			notice.createEl('h4', { text: this.deckError ?? 'Your Anki collection has no decks. Create one in Anki first.' });
+			notice.createEl('button', { text: 'Refresh' }).onclick = () => { void this.load(); };
+		}
+		else {
+			contentEl.createEl('p', { text: 'Pick one of the following available Anki decks to export to.' });
+			if (this.replacedDeck) {
+				contentEl.createEl('p', { cls: 'setting-item-description', text: `“${this.replacedDeck}” is not in Anki, so “${this.selectedDeck}” is selected.` });
+			}
+			renderDeckPicker(contentEl, this.decks, {
+				selected: this.selectedDeck,
+				query: this.query,
+				onQuery: query => { this.query = query; },
+				onSelect: deck => { if (!this.exporting) this.selectedDeck = deck; },
+			});
+		}
 
-    renderHtmlList() {
-        const htmlList = createEl('ul', { cls: 'deck-options-container' });
-        const convenienceButtons = createDiv({ cls: 'deck-options__buttons' });
+		const footer = new Setting(contentEl).addButton(button => {
+			this.buttons.push(button);
+			button.setButtonText('Back to selection').onClick(() => {
+				if (this.exporting) return;
+				this.close();
+				new ChoiceModal(this.app, this.review, this.address, this.selectedDeck, this.feedback, this.destinations).open();
+			});
+		});
+		if (this.decks.length) footer.addButton(button => {
+			this.buttons.push(button);
+			button.setButtonText('Confirm and export').setCta().onClick(() => this.exportSelection());
+		});
+		this.updateButtons();
+	}
 
-        htmlList.appendChild(convenienceButtons);
+	private updateButtons(): void {
+		for (const button of this.buttons) button.setDisabled(this.exporting);
+	}
 
-        this.decks.forEach((d: string) => {
-            const htmlDeck = createEl('li');
-            htmlDeck.appendChild(createEl('h3', { text: d }));
-            if (this.selectedDeck === d) {
-                htmlDeck.className = 'deck-option --selected'
-            }
-            else {
-                htmlDeck.className = 'deck-option'
-            }
-            htmlDeck.onclick = () => {
-                if (this.exporting) return;
-                this.selectedDeck = d;
-                this.renderContent();
-            };
-            htmlList.appendChild(htmlDeck);
-        })
+	private async load(): Promise<void> {
+		this.loaded = false;
+		this.render();
+		await this.fetchData();
+		this.render();
+	}
 
-        return htmlList;
-    }
+	private async exportSelection(): Promise<void> {
+		const notes = this.review.selectedNotes();
+		if (!this.selectedDeck || !notes.length || this.exporting) return;
+		this.exporting = true;
+		this.updateButtons();
+		try {
+			if (this.address !== this.destinations.url) throw new Error('The Anki address does not match this generation. Return to review.');
+			const outcome = await addNotesToAnki(notes, this.destinations, this.selectedDeck);
+			this.review.removeAdded(outcome.remaining);
+			if (!outcome.errors.length) new Notice(`Successfully exported ${outcome.added} note(s) to Anki!`);
+			else {
+				const reasons = [...new Set(outcome.errors)].slice(0, 3).join('\n');
+				new Notice(`Exported ${outcome.added} of ${notes.length} note(s) to Anki. Anki refused ${outcome.errors.length}:\n${reasons}`, 0);
+			}
+			if (!outcome.remaining.length) this.close();
+		}
+		catch (error) {
+			new Notice(`ERR: Anki refused the export: ${error instanceof Error ? error.message : 'The destinations could not be verified.'}`, 0);
+		}
+		finally {
+			this.exporting = false;
+			this.updateButtons();
+		}
+	}
 
-    renderContent() {
-        const { contentEl } = this;
-        contentEl.empty();
+	async onOpen(): Promise<void> {
+		this.modalEl.classList.add('auto-anki-picker');
+		await this.load();
+	}
 
-        // modal title
-        contentEl.createEl('h1', { text: 'Anki decks' });
-
-        if (!this.isDataFetched) {
-            const centerContainer = contentEl.createDiv({ cls: 'error-notice' });
-            centerContainer.createEl('h4', { text: 'Loading data…' });
-            return;
-        }
-
-		new Setting(contentEl).addButton(button => button.setButtonText('Back to notes').setDisabled(this.exporting).onClick(() => {
-			if (this.exporting) return;
-			this.close(); new ChoiceModal(this.app, this.notesToExport, this.address, this.selectedDeck, this.feedback, this.destinations).open();
-		}));
-        if (this.decks.length === 0) {
-            const centerContainer = contentEl.createDiv({ cls: 'error-notice' });
-            centerContainer.createEl('h4', { text: this.deckError ?? 'Your Anki collection has no decks. Create one in Anki first.' });
-            const refreshButton = centerContainer.createEl('button', { text: 'Refresh' });
-            refreshButton.onclick = async () => {
-                this.renderContent();
-                await this.fetchData();
-                this.renderContent();
-            }
-            return;
-        }
-
-        // modal description
-        contentEl.createEl('p', { text: 'Pick one of the following available Anki decks to export to.' });
-
-        // get deck list to render
-        const htmlList = this.renderHtmlList();
-        contentEl.appendChild(htmlList);
-        new Setting(contentEl)
-            .addButton((btn) =>
-                btn
-                .setButtonText('Confirm and export')
-                .setDisabled(this.selectedDeck === '' || this.exporting)
-                .setCta()
-                .onClick(async () => {
-                    if (this.selectedDeck === '' || this.exporting) return;
-                    this.exporting = true;
-                    this.renderContent();
-                    await this.exportSelection();
-                })
-        );
-    }
-
-    private async exportSelection(): Promise<void> {
-        try {
-            if (this.address !== this.destinations.url) throw new Error('The Anki address does not match this generation. Return to review.');
-            const total = this.notesToExport.length;
-            const outcome = await addNotesToAnki(this.notesToExport, this.destinations, this.selectedDeck);
-            this.notesToExport = outcome.remaining;
-            if (!outcome.errors.length) new Notice(`Successfully exported ${outcome.added} note(s) to Anki!`);
-            else {
-                const reasons = [...new Set(outcome.errors)].slice(0, 3).join('\n');
-                new Notice(`Exported ${outcome.added} of ${total} note(s) to Anki. Anki refused ${outcome.errors.length}:\n${reasons}`, 0);
-            }
-            if (!outcome.remaining.length) this.close();
-        }
-        catch (error) {
-            new Notice(`ERR: Anki refused the export: ${error instanceof Error ? error.message : 'The destinations could not be verified.'}`, 0);
-        }
-        finally {
-            this.exporting = false;
-            if (this.notesToExport.length) this.renderContent();
-        }
-    }
-
-    async onOpen() {
-        this.renderContent();
-        await this.fetchData();
-        this.renderContent();
-    }
-
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
-    }
+	onClose(): void { this.contentEl.empty(); }
 }
