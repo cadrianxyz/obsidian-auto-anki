@@ -80,10 +80,6 @@ export interface PluginSettings {
 		enabledNoteTypes: string[];
 		/** Existing Anki deck that starts selected in the export dialog. If Anki no longer has it, Anki's Default deck is used. */
 		defaultDeck: string;
-		/** When false, add no tags to Anki notes and hide the tag-template setting. */
-		tagNotes: boolean;
-		/** Space-separated tags, with deck placeholders plus {{provider}} and {{model}}. */
-		tagTemplate: string;
 	};
 }
 
@@ -109,7 +105,7 @@ export function createDefaultSettings(): PluginSettings {
 		anki: {
 			url: DEFAULT_ANKI_URL,
 			enabledNoteTypes: ['Basic', 'Cloze'],
-			defaultDeck: 'Default', tagNotes: true, tagTemplate: 'auto-anki::{{provider}}::{{model}}',
+			defaultDeck: 'Default',
 		},
 	};
 }
@@ -200,7 +196,5 @@ export function normalizeSettings(value: unknown): PluginSettings {
 		settings.anki.enabledNoteTypes = [...new Set(anki.enabledNoteTypes.filter((name): name is string => typeof name === 'string' && !!name.trim()))];
 	}
 	settings.anki.defaultDeck = asNonEmptyString(anki.defaultDeck) ?? settings.anki.defaultDeck;
-	settings.anki.tagNotes = asBoolean(anki.tagNotes, settings.anki.tagNotes);
-	settings.anki.tagTemplate = asString(anki.tagTemplate, settings.anki.tagTemplate);
 	return settings;
 }

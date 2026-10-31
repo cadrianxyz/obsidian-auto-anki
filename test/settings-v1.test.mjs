@@ -34,7 +34,6 @@ describe('1.0 settings defaults and validation', () => {
 		assert.deepEqual(Object.values(prepared.settings.providers).map(p => [p.id, p.secretName, p.models]), [
 			['openai', SECRET, []], ['anthropic', 'auto-anki-anthropic-api-key', []],
 		]);
-		assert.equal(prepared.settings.anki.tagNotes, true);
 		assert.equal(prepared.settings.notes.coverageLevel, 'main-ideas-and-details');
 		assert.ok(!('noteWritingInstructions' in prepared.settings.notes));
 		assert.ok(!('linkToNote' in prepared.settings.anki));
@@ -69,8 +68,9 @@ describe('1.0 settings defaults and validation', () => {
 		assert.equal(settings.notes.extraInstructions, 'British spelling');
 		assert.equal(settings.anki.url, 'http://127.0.0.1:8765');
 		assert.equal(settings.anki.defaultDeck, 'Default');
-		assert.equal(settings.anki.tagNotes, false);
-		assert.equal(settings.anki.tagTemplate, 'auto-anki::{{provider}}::{{model}}');
+		// Unknown fields, such as tag settings saved by development builds, are dropped.
+		assert.ok(!('tagNotes' in settings.anki));
+		assert.ok(!('tagTemplate' in settings.anki));
 	});
 
 	test('canonical strings are trimmed while names and Markdown retain their spacing', () => {
@@ -125,8 +125,6 @@ describe('1.0 settings defaults and validation', () => {
 		settings.anki.enabledNoteTypes = ['基本'];
 		settings.anki.url = 'https://my-anki.example/api';
 		settings.anki.defaultDeck = 'My deck';
-		settings.anki.tagNotes = false;
-		settings.anki.tagTemplate = '';
 		const result = normalizeSettings(JSON.parse(JSON.stringify(settings)));
 		assert.deepEqual(result, settings);
 		result.notes.noteWritingInstructions.text = 'Changed';
