@@ -212,8 +212,10 @@ export function openAiError(status, message, code) {
 export const BASIC_NOTE_TYPE = { id: 100, fields: ['Front', 'Back'], descriptions: ['', ''], templates: { 'Card 1': { Front: '{{Front}}', Back: '{{FrontSide}}\n<hr id=answer>\n{{Back}}' } } };
 export const CLOZE_NOTE_TYPE = { id: 200, fields: ['Text', 'Back Extra'], descriptions: ['', ''], templates: { Cloze: { Front: '{{cloze:Text}}', Back: '{{cloze:Text}}<br>{{Back Extra}}' } } };
 
-export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null, multiResult, noteTypes = { Basic: BASIC_NOTE_TYPE } } = {}) {
+// storeMedia answers storeMediaFile: by default it stores the file under the name it was given.
+export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null, multiResult, noteTypes = { Basic: BASIC_NOTE_TYPE }, storeMedia = filename => ({ result: filename, error: null }) } = {}) {
 	const added = [];
+	const media = [];
 	const types = structuredClone(noteTypes);
 	fake.ankiHandler = (body) => {
 		if (body.action === 'deckNames') return { json: { result: decks, error: null } };
@@ -225,6 +227,11 @@ export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null
 			return { json: { result: body.action === 'modelFieldNames' ? type.fields : body.action === 'modelTemplates' ? type.templates : type.descriptions ?? [], error: null } };
 		}
 		if (body.action === 'canAddNotes') return { json: { result: body.params.notes.map(() => true), error: null } };
+		if (body.action === 'storeMediaFile') {
+			const answer = storeMedia(body.params.filename);
+			if (!answer.error) media.push({ filename: body.params.filename, data: body.params.data });
+			return { json: answer };
+		}
 		if (body.action === 'multi') {
 			if (multiResult) return { json: multiResult(body) };
 			const result = body.params.actions.map((a) => {
@@ -238,7 +245,7 @@ export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null
 		}
 		return { json: { result: null, error: `unsupported action ${body.action}` } };
 	};
-	return { added, types };
+	return { added, types, media };
 }
 
 // Every AnkiConnect action the plugin sent, sub-actions of `multi` included.

@@ -24,8 +24,22 @@ export function noteResponseSchema(destinations: AnkiDestinations): NoteResponse
 	};
 }
 
+// An image placeholder names one of the diagrams sent with the note.
+const IMAGE_PLACEHOLDER = /\{\{image:([^{}\n]+)\}\}/g;
+
+/** The diagram IDs a note's fields use, each listed once. */
+export function imageIdsIn(fields: Readonly<Record<string, string>>): string[] {
+	return [...new Set(Object.values(fields).flatMap(value => [...value.matchAll(IMAGE_PLACEHOLDER)].map(match => match[1])))];
+}
+
+/** True when a field uses an image that was not sent, or any other image syntax. */
+function hasUnsupportedImage(value: string, diagramIds: ReadonlySet<string>): boolean {
+	for (const [, id] of value.matchAll(IMAGE_PLACEHOLDER)) if (!diagramIds.has(id)) return true;
+	return /\{\{image:|!\[|<(?:img|audio|video|source)\b|\[sound:/i.test(value.replace(IMAGE_PLACEHOLDER, ''));
+}
+
 /** Validate both provider replies and notes about to be exported, never trusting schema alone. */
-export function validateGeneratedNote(value: unknown, types: readonly AnkiNoteType[]): GeneratedAnkiNote | null {
+export function validateGeneratedNote(value: unknown, types: readonly AnkiNoteType[], diagramIds: ReadonlySet<string>): GeneratedAnkiNote | null {
 	const note = asRecord(value);
 	if (Object.keys(note).some(key => key !== 'noteType' && key !== 'fields')) return null;
 	const type = types.find(type => type.name === note.noteType);
@@ -34,7 +48,7 @@ export function validateGeneratedNote(value: unknown, types: readonly AnkiNoteTy
 	if (Object.keys(fields).length !== type.fields.length || !type.fields.every(field => Object.prototype.hasOwnProperty.call(fields, field) && typeof fields[field] === 'string')) return null;
 	const values = type.fields.map(field => fields[field] as string);
 	// Anki requires the first field to contain content; other fields may be intentionally blank.
-	if (!values[0].trim() || values.some(value => /\{\{image:|!\[|<(?:img|audio|video|source)\b|\[sound:/i.test(value))) return null;
+	if (!values[0].trim() || values.some(value => hasUnsupportedImage(value, diagramIds))) return null;
 	const cloze = clozeFields(type);
 	let hasCloze = false;
 	for (const field of type.fields) {
@@ -48,7 +62,7 @@ export function validateGeneratedNote(value: unknown, types: readonly AnkiNoteTy
 }
 
 /** Invalid entries are reported and excluded; no invented fields or types reach Anki. */
-export function parseGeneratedNotes(content: string, maximumNotes: number | undefined, destinations: AnkiDestinations): GenerationResult {
+export function parseGeneratedNotes(content: string, maximumNotes: number | undefined, destinations: AnkiDestinations, diagramIds: ReadonlySet<string>): GenerationResult {
 	let parsed: unknown;
 	try { parsed = JSON.parse(content); }
 	catch { throw new Error("The model's reply wasn't in the expected format, so no Anki notes were made. Try again or choose another model."); }
@@ -56,7 +70,7 @@ export function parseGeneratedNotes(content: string, maximumNotes: number | unde
 	if (Object.keys(root).some(key => key !== 'notes' && key !== 'note_issues') || !Array.isArray(root.notes) || !Array.isArray(root.note_issues) || !root.note_issues.every((issue: unknown) => typeof issue === 'string')) throw new Error("The model's reply wasn't in the expected format, so no Anki notes were made. Try again or choose another model.");
 	const result: GenerationResult = { notes: [], noteIssues: root.note_issues, warnings: [] };
 	for (const [index, value] of root.notes.entries()) {
-		const note = validateGeneratedNote(value, destinations.types);
+		const note = validateGeneratedNote(value, destinations.types, diagramIds);
 		if (!note) { result.warnings.push(`Note ${index + 1} was skipped because its type, fields or content are invalid for this run.`); continue; }
 		if (maximumNotes !== undefined && result.notes.length >= maximumNotes) { result.warnings.push(`Note ${index + 1} was skipped because it exceeds the maximum of ${maximumNotes}.`); continue; }
 		result.notes.push(note);

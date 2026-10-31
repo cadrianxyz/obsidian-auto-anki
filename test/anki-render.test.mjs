@@ -54,4 +54,20 @@ describe('Anki field rendering', () => {
 	test('ordinary Markdown is rendered', () => {
 		assert.equal(renderAnkiField('**bold** and *italic*'), '<strong>bold</strong> and <em>italic</em>');
 	});
+
+	test('an image placeholder becomes an img tag with the stored file name', () => {
+		assert.equal(renderAnkiField('Shown: {{image:queue.png}}', new Map([['queue.png', 'auto-anki-abc-queue.png']])), 'Shown: <img src="auto-anki-abc-queue.png" alt="queue.png">');
+	});
+
+	test('underscores and asterisks in a file name are not read as emphasis', () => {
+		assert.equal(renderAnkiField('{{image:my_*pic*_1.png}}', new Map([['my_*pic*_1.png', 'f.png']])), '<img src="f.png" alt="my_*pic*_1.png">');
+	});
+
+	test('a placeholder without a stored file is an error, never a broken image', () => {
+		assert.throws(() => renderAnkiField('{{image:missing.png}}'), /not available/);
+	});
+
+	test('the stored file name is escaped inside the attribute', () => {
+		assert.equal(renderAnkiField('{{image:a.png}}', new Map([['a.png', 'x"y.png']])), '<img src="x&quot;y.png" alt="a.png">');
+	});
 });

@@ -71,7 +71,7 @@ describe('OpenAI Responses request and response formats', () => {
 		}
 	});
 	test('diagrams follow filename labels as input images', async () => {
-		const prompt = { ...PROMPT, diagrams: [{ name: 'Attachments/queue.png', mime: 'image/png', base64: 'AQID' }] };
+		const prompt = { ...PROMPT, diagrams: [{ path: 'Attachments/queue.png', mime: 'image/png', base64: 'AQID', stored: { extension: 'png', base64: 'AQID' } }] };
 		await generate(model(), () => openAiReply(NOTES.notes), { prompt });
 		assert.deepEqual(openai.requests[0].body.input[0].content, [
 			{ type: 'input_text', text: PROMPT.source }, { type: 'input_text', text: 'Diagram: Attachments/queue.png' },

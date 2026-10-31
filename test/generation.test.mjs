@@ -76,10 +76,18 @@ describe('the instructions used for generation', () => {
 		const capped = createGenerationPrompt(preferences, { coverage: 'everything', maximumNotes: 2, instructions: '' }, NOTE, [], BASIC_DESTINATIONS);
 		assert.match(capped.instructions, /at most 2 notes.*ceiling, not a target/);
 	});
+	test('diagram ids sit with the note, not in the shared instructions, and images are allowed only as placeholders', () => {
+		const diagram = { path: 'queue.png', mime: 'image/png', base64: 'AQID', stored: { extension: 'png', base64: 'AQID' } };
+		const prompt = createGenerationPrompt(settings().notes, { coverage: 'everything', instructions: '' }, NOTE, [diagram], BASIC_DESTINATIONS);
+		assert.match(prompt.instructions, /write \{\{image:ID\}\}/);
+		assert.doesNotMatch(prompt.instructions, /do not include images/);
+		assert.equal(prompt.instructions.includes('queue.png'), false);
+		assert.deepEqual(JSON.parse(prompt.source).diagrams, ['queue.png']);
+	});
 	test('invalid notes are reported, limits apply to valid notes, and zero notes still carries note issues', () => {
 		const result = parseGeneratedNotes(JSON.stringify({ notes: [null, { type: 'cloze', front: '{{c1::bad}}', back: '' },
 			{ type: 'basic', front: ' ', back: 'x' }, { type: 'basic', front: 'a', back: 'b' },
-			{ type: 'basic', front: '{{image:unknown.png}}', back: 'x' }, { type: 'basic', front: 'c', back: 'd' }].map(generatedNote), note_issues: ['Check this source claim.'] }), 1, BASIC_DESTINATIONS);
+			{ type: 'basic', front: '{{image:unknown.png}}', back: 'x' }, { type: 'basic', front: 'c', back: 'd' }].map(generatedNote), note_issues: ['Check this source claim.'] }), 1, BASIC_DESTINATIONS, new Set());
 		assert.deepEqual(result.notes, [generatedNote({ q: 'a', a: 'b' })]);
 		assert.equal(result.warnings.length, 5);
 		assert.deepEqual(result.noteIssues, ['Check this source claim.']);

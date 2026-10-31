@@ -59,7 +59,7 @@ export class AnkiSettings {
 						setting.settingEl.empty();
 						setting.settingEl.classList.remove('setting-item');
 						const statusEl = setting.settingEl.createDiv({ cls: 'setting-item-description setting-horizontal-padding search-description', attr: { role: 'status' } });
-						statusEl.setText(discovery.loading ? 'Reading note types from Anki…' : discovery.error ?? 'Enable the note types the AI may generate.');
+						statusEl.setText(discovery.loading ? 'Reading note types from Anki…' : discovery.error ?? 'Enable the note types the AI may generate. Field and note-type descriptions are written in Anki and read from there.');
 					} },
 					...names.map((name): SettingDefinition => {
 						const type = types.find(type => type.name === name);

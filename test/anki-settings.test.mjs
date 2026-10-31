@@ -29,7 +29,7 @@ describe('Anki note-type checkboxes', () => {
   assert.deepEqual(shown('cloze'), ['', 'Cloze']);
   assert.deepEqual(shown('USAGE'), ['', 'Custom.with dots']);
   assert.ok(!settingsIn(tab.containerEl).some(row => row.name === 'Available note types'));
-  const status = tab.containerEl.all().find(el => el.className.split(/\s+/).includes('setting-item-description') && el.textContent === 'Enable the note types the AI may generate.');
+  const status = tab.containerEl.all().find(el => el.className.split(/\s+/).includes('setting-item-description') && el.textContent === 'Enable the note types the AI may generate. Field and note-type descriptions are written in Anki and read from there.');
   assert.ok(status);
  });
  test('custom selections and all-off survive restart and refresh', async () => {

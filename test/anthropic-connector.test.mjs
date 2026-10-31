@@ -90,7 +90,7 @@ describe('Claude request and response formats', () => {
 		assert.equal(fake.providerRequests[0].headers['x-stainless-timeout'], '600');
 	});
 	test('diagrams follow filename labels as native base64 image blocks', async () => {
-		const prompt = { ...PROMPT, diagrams: [{ name: 'Attachments/queue.png', mime: 'image/png', base64: 'AQID' }] };
+		const prompt = { ...PROMPT, diagrams: [{ path: 'Attachments/queue.png', mime: 'image/png', base64: 'AQID', stored: { extension: 'png', base64: 'AQID' } }] };
 		let body;
 		await generate(model(), sent => { body = sent; return response(); }, { prompt });
 		assert.deepEqual(body.messages[0].content, [

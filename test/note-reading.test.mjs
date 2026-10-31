@@ -56,8 +56,13 @@ describe('preparing diagrams locally', () => {
 	test('uses Obsidian resolution, decodes spaces, and reads a repeated attachment only once', async () => {
 		const app = makeDevice({ attachments: { 'Notes/my diagram.png': bytes(1, 2, 3) } });
 		const result = await prepareDiagrams(app, '![[my diagram.png|200]] ![same](my%20diagram.png)', 'Notes/Example.md', true, model, echo);
-		assert.deepEqual(result.diagrams, [{ name: 'Notes/my diagram.png', mime: 'image/png', base64: 'AQID' }]);
+		assert.deepEqual(result.diagrams, [{ path: 'Notes/my diagram.png', mime: 'image/png', base64: 'AQID', stored: { extension: 'png', base64: 'AQID' } }]);
 		assert.deepEqual(fake.attachmentReads, ['Notes/my diagram.png']);
+	});
+	test('diagrams are identified by vault path, even when file names match', async () => {
+		const app = makeDevice({ attachments: { 'a/pic.png': bytes(1), 'b/pic.png': bytes(2), 'c/other.png': bytes(3) } });
+		const result = await prepareDiagrams(app, '![[a/pic.png]] ![[b/pic.png]] ![[c/other.png]]', 'Note.md', true, model, echo);
+		assert.deepEqual(result.diagrams.map(diagram => diagram.path), ['a/pic.png', 'b/pic.png', 'c/other.png']);
 	});
 	test('web URLs, missing files, unsupported formats and unreadable images get individual reasons', async () => {
 		const app = makeDevice({ attachments: { 'a.svg': bytes(1), 'a.pdf': bytes(1), 'broken.png': bytes(2) } });
@@ -92,6 +97,8 @@ describe('preparing diagrams locally', () => {
 			assert.equal(mime, 'image/gif'); return { bytes: bytes(1), mime: 'image/png' };
 		});
 		assert.equal(result.diagrams[0].mime, 'image/png');
+		// Anki keeps the original GIF: "R0lG" is the base64 of the bytes 71, 73, 70.
+		assert.deepEqual(result.diagrams[0].stored, { extension: 'gif', base64: 'R0lG' });
 		assert.match(result.warnings[0], /first GIF frame/);
 		assert.deepEqual([...new Uint8Array(original)], [71, 73, 70]);
 		assert.equal(app.disk.writes, 0);

@@ -19,7 +19,7 @@ function buildRequest(model: ModelSettings, prompt: GenerationPrompt, mode: Reso
 		messages: [{ role: 'user', content: [
 			{ type: 'text', text: prompt.source },
 			...prompt.diagrams.flatMap(diagram => [
-				{ type: 'text' as const, text: `Diagram: ${diagram.name}` },
+				{ type: 'text' as const, text: `Diagram: ${diagram.path}` },
 				{ type: 'image' as const, source: { type: 'base64' as const, media_type: diagram.mime as Base64ImageSource['media_type'], data: diagram.base64 } },
 			]),
 		] }],

@@ -90,6 +90,10 @@ If your plugin does not need CSS, delete this file.
     margin: 0;
 }
 
+.question-options__buttons {
+    margin-bottom: var(--size-4-3);
+}
+
 .question-options__buttons > button,
 .deck-options__buttons > button {
     margin-right: 1em;

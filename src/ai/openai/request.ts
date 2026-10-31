@@ -14,7 +14,7 @@ function buildRequest(model: ModelSettings, prompt: GenerationPrompt, mode: Reso
 	const content: ResponseInputContent[] = [
 		{ type: 'input_text', text: prompt.source },
 		...prompt.diagrams.flatMap((diagram): ResponseInputContent[] => [
-			{ type: 'input_text', text: `Diagram: ${diagram.name}` },
+			{ type: 'input_text', text: `Diagram: ${diagram.path}` },
 			{ type: 'input_image', detail: 'auto', image_url: `data:${diagram.mime};base64,${diagram.base64}` },
 		]),
 	];

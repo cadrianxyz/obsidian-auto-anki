@@ -6,6 +6,7 @@ import { COVERAGE_LABELS, type RunPreferences } from '../generate/prompt';
 import { getReasoningEffortsForModel } from '../ai/models/metadata';
 import { generateNotes } from '../generate/run';
 import type { GeneratedAnkiNote, GenerationResult } from '../generate/result';
+import type { Diagram } from '../source-note/images';
 import { cleanNote, embeddedFiles, type SourceNote } from '../source-note/content';
 import { prepareDiagrams, resolveImageInputPolicy, type ImageInputPolicy, type PreparedDiagrams } from '../source-note/images';
 import { chooseDeck, getAnkiDecks, pinDeck } from '../anki/decks';
@@ -26,6 +27,9 @@ function showImageInputWarning(container: HTMLElement, policy: ImageInputPolicy,
 	else if (policy.warning === 'support-unknown') text = `Image support has not been reported for the selected model. ${files} will be sent, but the request may fail.`;
 	if (text) container.createDiv({ text, cls: 'auto-anki-export-warning', attr: { role: 'status' } });
 }
+
+/** What the review needs from a run: its messages, and the diagrams its notes may use. */
+type RunFeedback = Pick<GenerationResult, 'noteIssues' | 'warnings'> & { diagrams: readonly Diagram[] };
 
 function showGenerationMessages(container: HTMLElement, result: Pick<GenerationResult, 'noteIssues' | 'warnings'>): void {
 	if (result.noteIssues.length) {
@@ -297,7 +301,7 @@ class NoteSelection {
 /** Lets the user pick which generated notes to export. Only the list scrolls; the buttons stay in view. */
 export class ChoiceModal extends Modal {
 	constructor(app: App, private readonly review: NoteSelection, private readonly address: string, private readonly deck: string,
-		private readonly feedback: Pick<GenerationResult, 'noteIssues' | 'warnings'>, private readonly destinations: AnkiDestinations) {
+		private readonly feedback: RunFeedback, private readonly destinations: AnkiDestinations) {
 		super(app);
 	}
 
@@ -373,7 +377,7 @@ export class AnkiDeckModal extends Modal {
 		private selectedDeck: string,
 		private readonly review: NoteSelection,
 		private readonly destinations: AnkiDestinations,
-		private readonly feedback: Pick<GenerationResult, 'noteIssues' | 'warnings'>,
+		private readonly feedback: RunFeedback,
 	) {
 		super(app);
 	}
@@ -457,7 +461,7 @@ export class AnkiDeckModal extends Modal {
 		this.updateButtons();
 		try {
 			if (this.address !== this.destinations.url) throw new Error('The Anki address does not match this generation. Return to review.');
-			const outcome = await addNotesToAnki(notes, this.destinations, this.selectedDeck);
+			const outcome = await addNotesToAnki(notes, this.destinations, this.selectedDeck, this.feedback.diagrams);
 			this.review.removeAdded(outcome.remaining);
 			if (!outcome.errors.length) new Notice(`Successfully exported ${outcome.added} note(s) to Anki!`);
 			else {

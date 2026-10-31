@@ -11,11 +11,17 @@ const IMAGE_FORMATS: Readonly<Record<string, string>> = {
 };
 
 export interface Diagram {
-	/** Vault path distinguishes attachments with the same filename in different folders. */
-	name: string;
+	/** Vault path. It is also the id the model writes in {{image:…}}, so it is unique in a note. */
+	path: string;
 	mime: string;
 	base64: string;
+	/** The file Anki keeps. It is the sent copy, except for GIFs, whose original keeps the animation. */
+	stored: { extension: string; base64: string };
 }
+
+const STORED_EXTENSIONS: Readonly<Record<string, string>> = {
+	'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif',
+};
 
 export interface PreparedDiagrams {
 	diagrams: Diagram[];
@@ -88,13 +94,24 @@ export async function prepareDiagrams(
 		if (!mime) { result.warnings.push(`${link}: this file format is not supported for diagrams.`); continue; }
 		if (result.diagrams.length >= MAX_DIAGRAMS) { result.warnings.push(`${link}: only the first ${MAX_DIAGRAMS} diagrams are sent.`); continue; }
 		try {
-			const encoded = await encode(await app.vault.readBinary(file), mime);
+			const original = await app.vault.readBinary(file);
+			const encoded = await encode(original, mime);
 			if (!['image/png', 'image/jpeg', 'image/webp'].includes(encoded.mime)) throw new Error('The image could not be converted to a supported format.');
 			if (encoded.bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('The resized image exceeds 5 MB.');
-			result.diagrams.push({ name: file.path, mime: encoded.mime, base64: arrayBufferToBase64(encoded.bytes) });
-			if (mime === 'image/gif') result.warnings.push(`${link}: only the first GIF frame is analysed; the original animation is unchanged.`);
+			const sent = arrayBufferToBase64(encoded.bytes);
+			// A GIF is sent as a still frame, so Anki keeps the file as it was.
+			const stored = mime === 'image/gif'
+				? { extension: 'gif', base64: arrayBufferToBase64(original) }
+				: { extension: STORED_EXTENSIONS[encoded.mime], base64: sent };
+			result.diagrams.push({ path: file.path, mime: encoded.mime, base64: sent, stored });
+			if (mime === 'image/gif') result.warnings.push(`${link}: only the first GIF frame is analysed; Anki keeps the original GIF file.`);
 		}
 		catch { result.warnings.push(`${link}: the image could not be read or resized below 5 MB.`); }
 	}
 	return result;
+}
+
+/** The file name part of a vault path, shown to the user in review. */
+export function diagramFileName(path: string): string {
+	return path.slice(path.lastIndexOf('/') + 1);
 }
