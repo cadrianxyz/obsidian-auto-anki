@@ -97,7 +97,7 @@ describe('commands', () => {
 		}
 	});
 
-	test('"export current file" is not offered without an open note', async () => {
+	test('"generate notes from current file" is not offered without an open note', async () => {
 		const plugin = await device({ activeNote: null });
 		assert.equal(isOffered(plugin, FILE), false);
 	});

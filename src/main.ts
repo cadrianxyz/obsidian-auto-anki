@@ -34,7 +34,7 @@ export default class AutoAnkiPlugin extends Plugin {
 		this.addSettingTab(this.settingsTab);
 		this.generationStatus = new GenerationStatus(this.addStatusBarItem());
 		this.addCommand({
-			id: 'export-current-file-to-anki', name: 'Export current file to Anki',
+			id: 'export-current-file-to-anki', name: 'Generate notes from current file',
 			checkCallback: (checking: boolean) => {
 				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view) return false;
@@ -46,7 +46,7 @@ export default class AutoAnkiPlugin extends Plugin {
 			},
 		});
 		this.addCommand({
-			id: 'export-text-selection-to-anki', name: 'Export highlighted text to Anki',
+			id: 'export-text-selection-to-anki', name: 'Generate notes from highlighted text',
 			editorCheckCallback: (checking: boolean, editor: Editor, view) => {
 				if (!checking) {
 					const text = editor.getSelection();

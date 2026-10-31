@@ -7,8 +7,8 @@ Plugin for [Obsidian.md](https://obsidian.md/) that uses OpenAI or Claude to gen
 > **1.0 development build:** the requirements and setup below describe the current development version. See the [detailed setup guide](docs/model-discovery.md) for provider, model, generation and note-type settings. The screenshots in Feature Details still show the older 0.3 interface.
 
 The plugin introduces two new "commands" into obsidian:
-- _Export current file to Anki_
-- _Export highlighted text to Anki_ (only available in an active `Editable` window open - i.e. you need to have a document open, and it needs to be in `edit` mode)
+- _Generate notes from current file_
+- _Generate notes from highlighted text_ (only available in an active `Editable` window open - i.e. you need to have a document open, and it needs to be in `edit` mode)
 
 The command palette can be accessed on Obsidian through the following hotkey (default): `CMD` + `SHIFT` + `P`
 
@@ -49,7 +49,7 @@ API keys are saved in Obsidian's Keychain on this device, not in your vault. The
 
 ## Feature Details
 
-#### Exporting an Entire File to Anki (Command: _Export current file to Anki_)
+#### Generating Notes from the Current File (Command: _Generate notes from current file_)
 This command allows you to use the contents of the currently-opened file to send to GPT and generate a list of questions and answers.
 
 ![prompt-1](media/prompt-1.png)
@@ -67,8 +67,8 @@ An indicator will show whether `auto-anki` is currently generating your Anki not
 
 ![status-bar-running](media/status-bar-running.png)
 
-#### Exporting Highlighted Text to Anki (Command: _Export highlighted text to Anki_)
-This command is similar to "Exporting an Entire File to Anki", but this allows you to use the currently-highlighted text (instead of the whole file) to send to GPT and generate a list of questions and questions. (Important Note: file needs to be in `edit` mode for the command to be available).
+#### Generating Notes from Highlighted Text (Command: _Generate notes from highlighted text_)
+This command is similar to "Generating Notes from the Current File", but this allows you to use the currently-highlighted text (instead of the whole file) to send to GPT and generate a list of questions and questions. (Important Note: file needs to be in `edit` mode for the command to be available).
 
 ## Motivation
 
