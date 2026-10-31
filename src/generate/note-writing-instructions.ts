@@ -1,6 +1,6 @@
 // Change this version when the built-in guidance changes. A user's edit keeps the
 // version it started from, so a later comparison can explain what has changed.
-export const NOTE_WRITING_INSTRUCTIONS_VERSION = '1.0.0-native-fields';
+export const NOTE_WRITING_INSTRUCTIONS_VERSION = '1.0.0';
 
 // This is the editable writing guidance. The generation workflow adds its fixed
 // response format and Anki requirements separately; they do not belong in this editor.
