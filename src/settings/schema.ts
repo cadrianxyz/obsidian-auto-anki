@@ -2,6 +2,7 @@ import { asBoolean, asNonEmptyString, asOption, asRecord, asString, positiveInte
 import { PROVIDER_IDS, PROVIDER_NAMES, ProviderId, providerSecretName } from '../ai/providers';
 import { normalizeModelCapabilities, type ModelCapabilities, type ModelReasoningEffort } from '../ai/models/metadata';
 import { OUTPUT_MODES, OutputMode } from '../ai/generation';
+import type { TagSettings } from '../anki/tags';
 
 export const SETTINGS_VERSION = 1;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 25000;
@@ -80,6 +81,8 @@ export interface PluginSettings {
 		enabledNoteTypes: string[];
 		/** Existing Anki deck that starts selected in the export dialog. If Anki no longer has it, Anki's Default deck is used. */
 		defaultDeck: string;
+		/** Tags added to new Anki notes. Off by default, so nothing is tagged until the user asks. */
+		tags: TagSettings;
 	};
 }
 
@@ -106,6 +109,7 @@ export function createDefaultSettings(): PluginSettings {
 			url: DEFAULT_ANKI_URL,
 			enabledNoteTypes: ['Basic', 'Cloze'],
 			defaultDeck: 'Default',
+			tags: { enabled: false, model: true, reasoningEffort: false, promptVersion: false, prefix: true, extra: '' },
 		},
 	};
 }
@@ -196,5 +200,11 @@ export function normalizeSettings(value: unknown): PluginSettings {
 		settings.anki.enabledNoteTypes = [...new Set(anki.enabledNoteTypes.filter((name): name is string => typeof name === 'string' && !!name.trim()))];
 	}
 	settings.anki.defaultDeck = asNonEmptyString(anki.defaultDeck) ?? settings.anki.defaultDeck;
+	const tags = asRecord(anki.tags);
+	for (const option of ['enabled', 'model', 'reasoningEffort', 'promptVersion', 'prefix'] as const) {
+		settings.anki.tags[option] = asBoolean(tags[option], settings.anki.tags[option]);
+	}
+	// Kept as typed; tags are split and cleaned only when they're added to Anki notes.
+	settings.anki.tags.extra = asString(tags.extra, settings.anki.tags.extra);
 	return settings;
 }

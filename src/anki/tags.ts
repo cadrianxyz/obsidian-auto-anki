@@ -1,4 +1,3 @@
-import type { ProviderId } from '../ai/providers';
 import type { NoteWritingInstructions } from '../settings/schema';
 import { NOTE_WRITING_INSTRUCTIONS_VERSION } from '../generate/note-writing-instructions';
 
@@ -18,7 +17,8 @@ export interface TagSettings {
 
 /** What one run used, captured when it starts, so later setting changes don't alter its tags. */
 export interface TagRun {
-	providerId: ProviderId;
+	/** The provider's ID, such as `anthropic`, never its display name. */
+	providerId: string;
 	modelId: string;
 	/** The level chosen for this run; 'default' when the model's own default is used. */
 	reasoningEffort: string;
