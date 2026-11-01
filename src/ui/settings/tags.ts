@@ -1,6 +1,7 @@
 import type { SettingDefinitionItem } from 'obsidian';
 import type AutoAnkiPlugin from '../../main';
 import { TAG_PREFIX, noteTags, promptVersionTag, type TagRun, type TagSettings } from '../../anki/tags';
+import { describeTags, showTags } from '../tags/tag-display';
 
 type TagSwitch = Exclude<keyof TagSettings, 'extra'>;
 const SWITCHES: readonly TagSwitch[] = ['enabled', 'model', 'reasoningEffort', 'promptVersion', 'prefix'];
@@ -24,7 +25,7 @@ export class TagSettingsPage {
 		if (option === 'extra' && typeof value === 'string') {
 			// Keep the text box and cursor in place while typing; only the example changes.
 			await this.plugin.updateSettings(settings => { settings.anki.tags.extra = value; }, false);
-			this.exampleEl?.setText(this.example());
+			if (this.exampleEl) this.showExample(this.exampleEl);
 		}
 		else if (SWITCHES.includes(option as TagSwitch) && typeof value === 'boolean') {
 			// Redraw: the switches change which rows show, the descriptions and the example.
@@ -33,7 +34,7 @@ export class TagSettingsPage {
 	}
 
 	/** The tags one Anki note would get with tagging on, using the default model as the example run. */
-	private example(): string {
+	private showExample(el: HTMLElement): void {
 		const { settings } = this.plugin;
 		const reference = settings.defaultModel;
 		const model = reference && settings.providers[reference.providerId].models.find(model => model.id === reference.modelId);
@@ -43,8 +44,7 @@ export class TagSettingsPage {
 			promptVersion: promptVersionTag(settings.notes.noteWritingInstructions),
 		};
 		// Shown while tagging is off too, so the greyed-out choices can be judged before turning it on.
-		const tags = noteTags({ ...settings.anki.tags, enabled: true }, run);
-		return tags.length ? tags.join(' ') : 'No tags: turn on an option or add extra tags.';
+		showTags(el, noteTags({ ...settings.anki.tags, enabled: true }, run), 'none. Turn on an option or add extra tags.');
 	}
 
 	/** The entry on the Anki page. */
@@ -71,19 +71,20 @@ export class TagSettingsPage {
 			{ name: 'Tag Anki notes', desc: 'Add the tags below to each new Anki note. While this is off, no tags are added.',
 				control: { type: 'toggle', key: `${KEY}enabled`, disabled: locked } },
 			{ type: 'group', heading: 'Tags to add', items: [
-				{ name: 'Model', desc: `Adds ${prefix}<provider>::<model>, such as ${prefix}anthropic::<model>. The provider is its ID, which never changes.`,
+				{ name: 'Model', desc: describeTags(`Adds \`${prefix}<provider>::<model>\`, such as \`${prefix}anthropic::<model>\`. The provider is its ID, which never changes.`),
 					control: toggle('model') },
-				{ name: 'Reasoning effort', desc: `Adds ${prefix}effort::<level>, the level chosen for that run. "default" means the model used its own default.`,
+				{ name: 'Reasoning effort', desc: describeTags(`Adds \`${prefix}effort::<level>\`, the level chosen for that run. \`default\` means the model used its own default.`),
 					control: toggle('reasoningEffort') },
-				{ name: 'Prompt version', desc: `Adds ${prefix}prompt::<version>, the version of the built-in note-writing instructions. It ends in -edited when you use your own.`,
+				{ name: 'Prompt version', desc: describeTags(`Adds \`${prefix}prompt::<version>\`, the version of the built-in note-writing instructions. It ends in \`-edited\` when you use your own.`),
 					control: toggle('promptVersion') },
-				{ name: `Prefix tags with ${TAG_PREFIX}::`, desc: `Searching tag:${TAG_PREFIX}::* in Anki then finds every note these tags were added to. Without the prefix, they can mix with your own tags of the same name.`,
+				{ name: `Prefix tags with ${TAG_PREFIX}::`, desc: describeTags(`Searching \`tag:${TAG_PREFIX}::*\` in Anki then finds every note these tags were added to. Without the prefix, they can mix with your own tags of the same name.`),
 					control: toggle('prefix') },
-				{ name: 'Extra tags', desc: 'Your own tags for every new Anki note, separated by spaces. Use :: for nested tags, such as uni::cs101. No prefix is added to these. You can change them for one export in the deck step.',
+				{ name: 'Extra tags', desc: describeTags('Your own tags for every new Anki note, separated by spaces. Use `::` for nested tags, such as `uni::cs101`. No prefix is added to these. You can change them for one export in the deck step.'),
 					control: { type: 'text', key: `${KEY}extra`, placeholder: 'obsidian uni::cs101', disabled } },
 				{ name: 'Example', searchable: false, render: setting => {
 					setting.descEl.setText(`${tags.enabled ? 'Tags' : 'Once tagging is on, the tags'} one new Anki note would get, using your default model: `);
-					this.exampleEl = setting.descEl.createEl('code', { text: this.example() });
+					this.exampleEl = setting.descEl.createSpan();
+					this.showExample(this.exampleEl);
 				} },
 			] },
 		];

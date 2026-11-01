@@ -129,7 +129,16 @@ describe('the Tags page', () => {
 		assert.match(example(tab), /auto-anki::anthropic::claude-haiku-5-5 auto-anki::effort::high$/);
 		await control(tab, 'Model').type(false);
 		await control(tab, 'Reasoning effort').type(false);
-		assert.match(example(tab), /No tags/);
+		assert.match(example(tab), /: none\. Turn on an option or add extra tags\.$/);
+	});
+
+	test('the example and the tag patterns in descriptions are shown as code', async () => {
+		const { tab } = await openTags(withDefaultModel(settings => { settings.anki.tags = { ...DEFAULT_TAGS, enabled: true, extra: 'obsidian' }; }));
+		const codes = row(tab, 'Example').descEl.all().filter(el => el.tagName === 'code').map(el => el.text);
+		assert.deepEqual(codes, ['auto-anki::anthropic::claude-haiku-5-5', 'obsidian']);
+		assert.ok(row(tab, 'Example').descEl.all().filter(el => el.tagName === 'code').every(el => el.className === 'auto-anki-tag'), 'styled as code');
+		const model = row(tab, 'Model').definition.desc.all().filter(el => el.tagName === 'code').map(el => el.text);
+		assert.deepEqual(model, ['auto-anki::<provider>::<model>', 'auto-anki::anthropic::<model>']);
 	});
 
 	test('typing extra tags updates the example without redrawing the page', async () => {
