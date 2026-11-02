@@ -33,8 +33,11 @@ type RunFeedback = Pick<GenerationResult, 'noteIssues' | 'warnings'> & { diagram
 
 function showGenerationMessages(container: HTMLElement, result: Pick<GenerationResult, 'noteIssues' | 'warnings'>): void {
 	if (result.noteIssues.length) {
-		container.createEl('p', { text: 'Check these claims in your note. The model was asked to leave suspected mistakes out of the generated notes.' });
-		const list = container.createEl('ul');
+		const details = container.createEl('details');
+		details.open = true;
+		details.createEl('summary', { text: 'Potential issues found' });
+		details.createEl('p', { cls: 'setting-item-description', text: 'The model was told to leave these possible mistakes out of the generated notes.' });
+		const list = details.createEl('ul', { cls: 'auto-anki-selectable-issues' });
 		for (const issue of result.noteIssues) list.createEl('li', { text: issue });
 	}
 	if (result.warnings.length) {
@@ -310,12 +313,11 @@ export class ChoiceModal extends Modal {
 		this.modalEl.classList.add('auto-anki-picker');
 		this.titleEl.setText('Review Anki notes');
 		showGenerationMessages(contentEl, this.feedback);
-		contentEl.createEl('p', { text: 'Each selected entry is added as one Anki note. Your chosen type may create more than one flashcard from it.' });
 		if (!review.notes.length) {
 			contentEl.createEl('p', { text: 'No Anki notes were generated. The source note may not contain enough useful material, or all entries were skipped.' });
 			return;
 		}
-		contentEl.createEl('p', { text: 'Pick the notes you want to export to Anki.' });
+		contentEl.createEl('p', { text: 'Pick the notes you want to export to Anki. One Anki note may create multiple cards.' });
 
 		const shortcuts = contentEl.createDiv({ cls: 'question-options__buttons' });
 		const list = contentEl.createEl('ul', { cls: 'question-options-container' });

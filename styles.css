@@ -237,6 +237,11 @@ If your plugin does not need CSS, delete this file.
     resize: vertical;
 }
 
+.auto-anki-selectable-issues {
+    cursor: text;
+    user-select: text;
+}
+
 /* --- Note and deck pickers --- */
 
 /* The modal is capped at the window height. Only the list shrinks and scrolls,

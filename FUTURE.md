@@ -106,6 +106,34 @@ clearly opt-in. Not scheduled; the NLP option may cover most of the need.
 
 ---
 
+# Anki note checks for prompt changes
+
+The build plan's *Checking the prompt* describes automatic checks on generated Anki notes, to show
+whether a prompt change made them better or worse. Not needed for 1.0; the plan's open decision 1
+still covers the live script.
+
+**What they would check** (rules code can apply without reading the card's meaning):
+
+- **Answer length:** a long answer is hard to recall at a glance. Needs a threshold.
+- **List markers:** a field starting with `-`, `1.` or `•` probably packs several facts into one note.
+- **Cloze numbering:** a cloze note should use only `c1`, so each note makes one card. Confirm before building.
+- **`{{image:…}}` names only diagrams that were sent**, and **empty fields** and **the note limit**. The
+  export already refuses these, so the checks would only count them.
+
+**When they would run:**
+
+- `npm test`, on saved replies in `test/fixtures/`, with no network. Saved replies test the checks, not
+  the current prompt or models, so they need re-recording when the prompt changes.
+- `scripts/prompt-check.mjs`, by hand, live. Costs a few cents, and writes a report with every Anki note
+  for reading, and compares it with an earlier report.
+- Never inside the plugin at runtime. Generation and export behave the same with or without them.
+
+**Outcomes:** bug-class failures (a rule the code already enforces) would fail `npm test`. Quality
+signals would only appear in the report, since a threshold would otherwise block good prompt changes.
+
+**Open:** the answer-length threshold; whether `npm test` becomes a step in the release workflow (it
+isn't one today); and whether the replies are recorded from a live run or written by hand.
+
 # Other ideas
 
 | Idea | Notes |
