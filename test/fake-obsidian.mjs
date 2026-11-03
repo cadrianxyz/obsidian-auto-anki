@@ -10,11 +10,17 @@ export const fake = {
 	modals: [],
 	ankiRequests: [],
 	ankiHandler: null,
+	providerRequests: [],
+	providerHandler: null,
+	attachmentReads: [],
 	reset() {
 		this.notices.length = 0;
 		this.modals.length = 0;
 		this.ankiRequests.length = 0;
 		this.ankiHandler = null;
+		this.providerRequests.length = 0;
+		this.providerHandler = null;
+		this.attachmentReads.length = 0;
 	},
 };
 
@@ -53,6 +59,7 @@ export class FakeElement {
 	createSpan(opts) { return this.createEl('span', opts); }
 	appendText(t) { this.children.push(Object.assign(new FakeElement('#text'), { text: t })); }
 	appendChild(el) { this.children.push(el); return el; }
+	setText(value) { this.textContent = value; return this; }
 	empty() { this.children = []; this.text = ''; }
 	// Depth-first list of this element and everything inside it.
 	all() { return [this, ...this.children.flatMap((c) => (c.all ? c.all() : []))]; }
@@ -67,6 +74,8 @@ function applyOpts(el, opts) {
 	if (opts.href) el.attrs.href = opts.href;
 }
 
+// Obsidian exposes window timers in its desktop renderer; Node supplies the test timers.
+globalThis.window = { setTimeout, clearTimeout, fetch: (...args) => globalThis.fetch(...args) };
 globalThis.createEl = (tag, opts) => new FakeElement(tag, opts);
 globalThis.createDiv = (opts) => new FakeElement('div', opts);
 globalThis.createSpan = (opts) => new FakeElement('span', opts);
@@ -100,9 +109,23 @@ class TextComponent extends ValueComponent {
 	constructor() { super(); this.inputEl = new FakeElement('input'); }
 }
 
+class TextAreaComponent extends ValueComponent {
+	constructor() { super(); this.inputEl = new FakeElement('textarea'); }
+}
+
 class DropdownComponent extends ValueComponent {
-	constructor() { super(); this.options = {}; }
+	constructor() {
+		super();
+		this.options = {};
+		this.selectEl = new FakeElement('select');
+		this.selectEl.empty = () => {
+			FakeElement.prototype.empty.call(this.selectEl);
+			this.options = {};
+			this.value = '';
+		};
+	}
 	addOption(value, label) { this.options[value] = label; return this; }
+	addOptions(options) { Object.assign(this.options, options); return this; }
 }
 
 class ButtonComponent {
@@ -113,6 +136,11 @@ class ButtonComponent {
 	setDisabled(d) { this.disabled = d; return this; }
 	onClick(cb) { this.handler = cb; return this; }
 	async click() { if (!this.disabled) return this.handler?.({}); }
+}
+
+class ExtraButtonComponent extends ButtonComponent {
+	setIcon(icon) { this.icon = icon; return this; }
+	setTooltip(tooltip) { this.tooltip = tooltip; return this; }
 }
 
 export class Setting {
@@ -127,8 +155,12 @@ export class Setting {
 	setName(n) { this.name = n; return this; }
 	setDesc(d) { this.desc = typeof d === 'string' ? d : d.textContent; return this; }
 	setHeading() { this.heading = true; return this; }
+	setClass(cls) { this.settingEl.classList.add(cls); return this; }
 	add(component, cb) { this.components.push(component); cb(component); return this; }
 	addText(cb) { return this.add(new TextComponent(), cb); }
+	addTextArea(cb) { return this.add(new TextAreaComponent(), cb); }
+	addSearch(cb) { return this.add(new TextComponent(), cb); }
+	addExtraButton(cb) { return this.add(new ExtraButtonComponent(), cb); }
 	addDropdown(cb) { return this.add(new DropdownComponent(), cb); }
 	addButton(cb) { return this.add(new ButtonComponent(), cb); }
 	addSlider(cb) { return this.add(new ValueComponent(), cb); }
@@ -178,7 +210,7 @@ export class Plugin extends Component {
 		this.app.disk.writes += 1;
 	}
 	addCommand(cmd) { this.commands.push(cmd); return cmd; }
-	addSettingTab(tab) { this.settingTabs.push(tab); }
+	addSettingTab(tab) { this.settingTabs.push(tab); tab.update(); }
 	addStatusBarItem() { return new FakeElement('div'); }
 	addRibbonIcon() { return new FakeElement('div'); }
 }
@@ -188,6 +220,65 @@ export class PluginSettingTab {
 		this.app = app;
 		this.plugin = plugin;
 		this.containerEl = new FakeElement('div');
+		this.settingItems = [];
+		this.pagePath = [];
+		this.displaying = false;
+	}
+	getSettingDefinitions() { return []; }
+	update() {
+		this.settingItems = this.getSettingDefinitions();
+		if (this.displaying) this.renderDefinitions();
+	}
+	display() { this.displaying = true; this.update(); }
+	hide() { this.displaying = false; this.pagePath = []; }
+	refreshDomState() {}
+	openPage(...names) { this.pagePath = names; this.display(); }
+	renderDefinitions() {
+		this.containerEl.empty();
+		const evaluate = v => typeof v === 'function' ? v() : v;
+		const pages = items => items.flatMap(item => item.type === 'group' || item.type === 'list' ? pages(item.items ?? []) : [item]);
+		let items = this.settingItems;
+		for (const name of this.pagePath) {
+			const page = pages(items).find(item => item.type === 'page' && item.name === name);
+			if (!page) break;
+			items = page.items ?? [];
+		}
+		const render = definitions => {
+			for (const definition of definitions) {
+				if (evaluate(definition.visible) === false) continue;
+				if (definition.type === 'group' || definition.type === 'list') {
+					const header = new Setting(this.containerEl).setName(definition.heading ?? '');
+					header.definition = definition;
+					if (definition.search) header.addSearch(search => search.setPlaceholder(definition.search.placeholder));
+					for (const button of definition.extraButtons ?? []) header.addExtraButton(button);
+					render(definition.items ?? []);
+					continue;
+				}
+				const setting = new Setting(this.containerEl).setName(definition.name).setDesc(definition.desc ?? '');
+				setting.definition = definition;
+				if (definition.type === 'page') continue;
+				if (definition.render) { definition.render(setting, {}); continue; }
+				if (definition.action) {
+					setting.settingEl.onclick = () => evaluate(definition.disabled) ? undefined : definition.action(setting.settingEl, 0);
+					continue;
+				}
+				const control = definition.control;
+				if (!control) continue;
+				const component = control.type === 'dropdown' ? new DropdownComponent() : control.type === 'textarea' ? new TextAreaComponent() : new TextComponent();
+				if (control.type === 'textarea') component.inputEl.rows = control.rows;
+				if (control.options) for (const [key, label] of Object.entries(control.options)) component.addOption(key, label);
+				component.setValue(this.getControlValue(control.key) ?? control.defaultValue);
+				component.setDisabled(evaluate(control.disabled) ?? false);
+				component.onChange(async input => {
+					if (component.disabled) return;
+					const value = control.type === 'number' && typeof input === 'string' ? (input.trim() ? Number(input) : NaN) : input;
+					component.validationError = await control.validate?.(value);
+					if (!component.validationError) await this.setControlValue(control.key, value);
+				});
+				setting.components.push(component);
+			}
+		};
+		render(items);
 	}
 }
 
@@ -195,10 +286,14 @@ export class Modal {
 	constructor(app) {
 		this.app = app;
 		this.contentEl = new FakeElement('div');
+		this.titleEl = new FakeElement('div');
+		this.modalEl = new FakeElement('div');
 		this.isOpen = false;
 	}
 	open() {
 		this.isOpen = true;
+		// Obsidian saves the text cursor in `selection` when a modal opens, replacing any subclass field of that name.
+		this.selection = { win: null, range: null, focusEl: null };
 		fake.modals.push(this);
 		this.opened = Promise.resolve(this.onOpen?.());
 	}
@@ -213,15 +308,25 @@ export class MarkdownView {}
 export class Editor {}
 export class App {}
 
+export function arrayBufferToBase64(bytes) { return Buffer.from(bytes).toString('base64'); }
+export function parseLinktext(text) { return { path: text.split('#')[0], subpath: text.includes('#') ? `#${text.split('#').slice(1).join('#')}` : '' }; }
+
 export function setIcon(el, icon) { el.icon = icon; }
 
-// ---- requestUrl, used for AnkiConnect ----
+export function normalizePath(path) {
+	return path.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/|\/$/g, '');
+}
+
+// ---- requestUrl: route hosted AI/catalogue requests separately from AnkiConnect ----
 
 export async function requestUrl(req) {
 	const body = req.body ? JSON.parse(req.body) : undefined;
-	fake.ankiRequests.push({ url: req.url, body });
-	if (!fake.ankiHandler) throw new Error('net::ERR_CONNECTION_REFUSED');
-	const reply = await fake.ankiHandler(body, req);
+	const provider = /^https:\/\/(?:api\.openai\.com|api\.anthropic\.com|models\.dev)(?:\/|$)/.test(req.url);
+	const requests = provider ? fake.providerRequests : fake.ankiRequests;
+	requests.push({ url: req.url, body, headers: req.headers, method: req.method });
+	const handler = provider ? fake.providerHandler : fake.ankiHandler;
+	if (!handler) throw new Error('net::ERR_CONNECTION_REFUSED');
+	const reply = await handler(body, req);
 	const status = reply?.status ?? 200;
 	if (req.throw !== false && status >= 400) throw new Error(`Request failed, status ${status}`);
 	return { status, json: reply?.json, text: JSON.stringify(reply?.json) };

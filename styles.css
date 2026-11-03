@@ -57,18 +57,18 @@ If your plugin does not need CSS, delete this file.
     animation-iteration-count: infinite;
     animation-timing-function: linear;
 }
-@-webkit-keyframes spin { 
-    from { 
-        -webkit-transform: rotate(0deg); 
-    } to { 
-        -webkit-transform: rotate(360deg); 
+@-webkit-keyframes spin {
+    from {
+        -webkit-transform: rotate(0deg);
+    } to {
+        -webkit-transform: rotate(360deg);
     }
 }
-@keyframes spin { 
-    from { 
-        transform: rotate(0deg); 
-    } to { 
-        transform: rotate(360deg); 
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    } to {
+        transform: rotate(360deg);
     }
 }
 
@@ -88,6 +88,10 @@ If your plugin does not need CSS, delete this file.
     list-style-type: none;
     padding: 0;
     margin: 0;
+}
+
+.question-options__buttons {
+    margin-bottom: var(--size-4-3);
 }
 
 .question-options__buttons > button,
@@ -110,3 +114,161 @@ If your plugin does not need CSS, delete this file.
     background: var(--color-accent);
     color: var(--text-on-accent);
 }
+
+.auto-anki-picker .deck-option h3 {
+    font-size: var(--font-ui-small);
+}
+
+.setting-title .setting-item-name {
+    font-size: var(--font-ui-large);
+}
+
+.auto-anki-manage-models .auto-anki-model-description {
+    font-size: var(--font-ui-small);
+}
+
+.search-description {
+	padding-top: 0;
+    padding-bottom: 1em;
+}
+.setting-horizontal-padding {
+	padding-left: var(--setting-items-padding-x);
+	padding-right: var(--setting-items-padding-x);
+}
+
+.auto-anki-provider-model-list {
+    padding-bottom: var(--size-4-2);
+    border-radius: 0 0 var(--radius-m) var(--radius-m);
+    overflow: hidden;
+}
+
+.auto-anki-manage-models {
+    display: flex;
+    flex-direction: column;
+    width: min(680px, 90vw);
+    max-height: 85vh;
+    max-height: 85dvh;
+}
+
+.auto-anki-manage-models .modal-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.auto-anki-manage-models .modal-content > :not(.auto-anki-model-candidates) {
+    flex: 0 0 auto;
+}
+
+.auto-anki-model-candidates {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    margin-block: var(--size-4-2);
+    padding-inline-end: var(--size-4-4);
+}
+
+.auto-anki-model-advanced {
+    margin-block: var(--size-4-3);
+}
+
+/* --- Export confirmation --- */
+
+.auto-anki-export-options > .setting-horizontal-padding {
+    padding-bottom: var(--size-4-3);
+}
+
+.auto-anki-note-types-divider {
+    margin: var(--size-4-2) 0 0;
+    border: 0;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.auto-anki-export-warning {
+    margin-block: var(--size-4-2);
+    padding: var(--size-4-2) var(--size-4-3);
+    color: var(--text-warning);
+    background: var(--background-modifier-form-field);
+    border-inline-start: 3px solid var(--text-warning);
+    border-radius: var(--radius-s);
+}
+
+.auto-anki-export {
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh;
+    max-height: 85dvh;
+}
+
+.auto-anki-export .modal-content {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+}
+
+.auto-anki-export .modal-title {
+    flex-shrink: 0;
+}
+
+.auto-anki-export-options {
+    margin-block: var(--size-4-3);
+}
+
+.auto-anki-export-options > summary {
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    padding-block: var(--size-4-1);
+}
+
+.auto-anki-instructions .setting-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--size-4-3);
+}
+
+.auto-anki-instructions .setting-item-control {
+    justify-content: flex-start;
+}
+
+.auto-anki-instructions textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+.auto-anki-selectable-issues {
+    cursor: text;
+    user-select: text;
+}
+
+/* --- Note and deck pickers --- */
+
+/* The modal is capped at the window height. Only the list shrinks and scrolls,
+   so the search box and the buttons below it stay in view. */
+.auto-anki-picker {
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh;
+    max-height: 85dvh;
+}
+
+.auto-anki-picker .modal-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.deck-search {
+    margin-bottom: var(--size-4-3);
+}
+
+.auto-anki-picker .question-options-container,
+.auto-anki-picker .deck-options-container {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+}
+
+/* Preserve generated field line breaks in the text review. */
+.anki-note-field-value { white-space: pre-wrap; }

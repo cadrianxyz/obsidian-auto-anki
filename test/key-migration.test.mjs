@@ -12,11 +12,11 @@ import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { fake } from 'obsidian';
 import { migrateLegacyApiKey } from '../src/utils/api-key';
-import { DEFAULT_OPENAI_MODEL } from '../src/settings';
+import { LEGACY_DEFAULT_OPENAI_MODEL } from '../src/settings/legacy';
 import {
 	SECRET_ID, DATA_0_2_1, DATA_0_2_2, DATA_NO_KEY,
 	makeDisk, makeKeychain, makeDevice, loadPlugin, readDataJson,
-	openSettings, run, resetAll,
+	openProviderSettings as openSettings, run, resetAll,
 } from './helpers.mjs';
 
 const KEY = DATA_0_2_1.openAiApiKey;
@@ -146,7 +146,7 @@ describe('loading the plugin', () => {
 	});
 
 	for (const [version, data] of [['0.1.0 to 0.2.1', DATA_0_2_1], ['0.2.2', DATA_0_2_2]]) {
-		test(`upgrade from ${version}: key moved, every other setting kept`, async () => {
+		test(`upgrade from ${version}: key moved and settings migrated to 1.0`, async () => {
 			const kc = makeKeychain();
 			const app = makeDevice({ disk: makeDisk(data), keychain: kc });
 			await loadPlugin(app);
@@ -154,10 +154,10 @@ describe('loading the plugin', () => {
 			assert.equal(kc.secrets.get(SECRET_ID), KEY);
 			assertNoKeyInDataJson(app.disk);
 			const after = readDataJson(app.disk);
-			assert.equal(after.ankiConnectPort, 8765);
-			assert.equal(after.ankiDestinationDeck, 'Biology');
-			assert.deepEqual(after.questionGenerationDefaults, data.questionGenerationDefaults);
-			assert.equal(after.openAiModel, data.openAiModel ?? DEFAULT_OPENAI_MODEL);
+			assert.equal(after.anki.url, 'http://127.0.0.1:8765');
+			assert.equal(after.anki.defaultDeck, 'Biology');
+			assert.equal(after.settings_version, 1);
+			assert.deepEqual(after.defaultModel, { providerId: 'openai', modelId: data.openAiModel ?? LEGACY_DEFAULT_OPENAI_MODEL });
 			assert.ok(!('gptAdvancedOptions' in after), 'old sampling settings left in data.json');
 
 			assert.equal(noticesMatching(/moved your OpenAI API key/).length, 1);
@@ -180,7 +180,7 @@ describe('loading the plugin', () => {
 		assert.deepEqual(fake.notices, []);
 	});
 
-	test('upgrade from 0.3.0: nothing to migrate, nothing written, nothing shown', async () => {
+	test('upgrade from 0.3.0: new schema written, existing Keychain key retained', async () => {
 		const data030 = {
 			ankiConnectPort: 8765,
 			ankiDestinationDeck: 'Biology',
@@ -191,9 +191,10 @@ describe('loading the plugin', () => {
 		const kc = makeKeychain('ok', { [SECRET_ID]: OTHER_KEY });
 		const app = makeDevice({ disk: makeDisk(data030), keychain: kc });
 		const plugin = await loadPlugin(app);
-		assert.equal(app.disk.writes, 0);
+		assert.equal(app.disk.writes, 1);
 		assert.deepEqual(fake.notices, []);
-		assert.deepEqual(plugin.settings, data030);
+		assert.equal(plugin.settings.settings_version, 1);
+		assert.equal(plugin.settings.providers.openai.models[0].reasoningEffort, 'low');
 		assert.equal(kc.calls.set, 0);
 	});
 
@@ -212,10 +213,10 @@ describe('loading the plugin', () => {
 		assert.equal(noticesMatching(/removed its temperature/).length, 1);
 	});
 
-	test('unknown fields (from a newer version) survive the migration', async () => {
+	test('unknown fields are discarded by the validated 1.0 schema', async () => {
 		const app = makeDevice({ disk: makeDisk({ ...DATA_0_2_2, someFutureSetting: { a: 1 } }) });
 		await loadPlugin(app);
-		assert.deepEqual(readDataJson(app.disk).someFutureSetting, { a: 1 });
+		assert.ok(!('someFutureSetting' in readDataJson(app.disk)));
 	});
 
 	for (const mode of ['ignores-writes', 'throws-on-write', 'throws']) {
@@ -275,6 +276,7 @@ describe('a synced vault: one data.json, a Keychain per device', () => {
 		const tab = openSettings(b);
 		const keyBox = tab.containerEl.all().find((e) => e.setting?.name === 'OpenAI API key').setting.components[0];
 		await keyBox.type(KEY);
+		await tab.containerEl.all().find(e => e.setting?.name === 'OpenAI API key').setting.components[1].click();
 		assert.equal(kcB.secrets.get(SECRET_ID), KEY);
 		assertNoKeyInDataJson(disk);
 	});

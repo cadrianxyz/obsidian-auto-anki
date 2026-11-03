@@ -1,9 +1,9 @@
 // Shared set-up for the tests: fake "devices" (an Obsidian app with its own Keychain),
 // a shared vault disk (data.json), and fake OpenAI and AnkiConnect servers.
 import { fake } from 'obsidian';
-// Must come before the plugin: version 4 of the OpenAI SDK keeps whichever fetch exists
+// Must come before the plugin: the SDKs may keep whichever fetch exists
 // when it first loads.
-import { openai } from './fake-openai.mjs';
+import { openai } from './fake-fetch.mjs';
 import AutoAnkiPlugin from '../src/main';
 
 export { openai };
@@ -73,14 +73,40 @@ export function makeEditor(selection) {
 
 // ---- A device: an Obsidian app with this vault open ----
 
-export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activeNote = 'Some note text.' } = {}) {
+export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activeNote = 'Some note text.', pluginDirectory = MANIFEST.dir,
+	notePath = 'Notes/Example.md', attachments = {} } = {}) {
+	const cachePath = `${pluginDirectory}/model-catalog-cache.json`;
+	const adapter = readOnly('vault.adapter', ['append', 'remove', 'rename', 'writeBinary', 'process'], {
+		async read(path) {
+			if (path !== cachePath) throw new Error(`Auto Anki tried to read an unexpected file: ${path}`);
+			if (!(path in disk.files)) throw new Error('File does not exist');
+			return disk.files[path];
+		},
+		async write(path, data) {
+			if (path !== cachePath) throw new Error(`Auto Anki tried to change an unexpected file: ${path}`);
+			disk.files[path] = data;
+			disk.cacheWrites = (disk.cacheWrites ?? 0) + 1;
+		},
+	});
 	const app = {
 		disk,
-		vault: readOnly('vault', NOTE_WRITERS, { adapter: readOnly('vault.adapter', ['write', 'append', 'remove', 'rename', 'writeBinary', 'process'], {}) }),
+		vault: readOnly('vault', NOTE_WRITERS, { adapter,
+			async readBinary(file) {
+				fake.attachmentReads.push(file.path);
+				if (!(file.path in attachments)) throw new Error('Attachment missing');
+				return attachments[file.path];
+			},
+		}),
+		metadataCache: { getFirstLinkpathDest(link, sourcePath) {
+			const folder = sourcePath.slice(0, sourcePath.lastIndexOf('/') + 1);
+			const path = [link, `${folder}${link}`, ...Object.keys(attachments).filter(path => path.endsWith(`/${link}`))].find(path => path in attachments);
+			return path ? { path, extension: path.split('.').at(-1), basename: path.split('/').at(-1).replace(/\.[^.]+$/, '') } : null;
+		} },
 		workspace: {
 			activeNote,
+			file: { path: notePath, basename: notePath.split('/').at(-1).replace(/\.[^.]+$/, '') },
 			getActiveViewOfType() {
-				return this.activeNote === null ? null : { data: this.activeNote, editor: makeEditor('') };
+				return this.activeNote === null ? null : { data: this.activeNote, editor: makeEditor(''), file: this.file };
 			},
 		},
 	};
@@ -101,6 +127,12 @@ export function openSettings(plugin) {
 	return tab;
 }
 
+export function openProviderSettings(plugin, name = 'OpenAI') {
+	const tab = openSettings(plugin);
+	tab.openPage(name);
+	return tab;
+}
+
 export function command(plugin, id) {
 	const cmd = plugin.commands.find((c) => c.id === id);
 	if (!cmd) throw new Error(`no command ${id}`);
@@ -117,7 +149,7 @@ export function isOffered(plugin, id, selection = 'selected text') {
 export function run(plugin, id, selection = 'selected text') {
 	const cmd = command(plugin, id);
 	if (cmd.checkCallback) return cmd.checkCallback(false);
-	return cmd.editorCheckCallback(false, makeEditor(selection), {});
+	return cmd.editorCheckCallback(false, makeEditor(selection), { file: plugin.app.workspace.file });
 }
 
 // ---- Data.json shapes written by earlier versions ----
@@ -138,19 +170,34 @@ export const DATA_0_2_2 = Object.freeze({ ...DATA_0_2_1, openAiModel: 'gpt-6-lun
 // A 0.2.x install where no key was ever entered.
 export const DATA_NO_KEY = Object.freeze({ ...DATA_0_2_1, openAiApiKey: null, openAiApiKeyIdentifier: '' });
 
-// A successful chat completion, one choice per list of cards.
-export function completion(...choices) {
+export function generatedNote(value) {
+	if (!value || typeof value !== 'object' || value.noteType) return value;
+	if ('q' in value) return { noteType: 'Basic', fields: { Front: value.q, Back: value.a } };
+	if (value.type === 'basic') return { noteType: 'Basic', fields: { Front: value.front, Back: value.back } };
+	if (value.type === 'cloze') return { noteType: 'Cloze', fields: { Text: value.front, 'Back Extra': value.back } };
+	return value;
+}
+
+export const BASIC_DESTINATIONS = { url: 'http://127.0.0.1:8765', problems: [], types: [{ name: 'Basic', id: 100, fields: ['Front', 'Back'], descriptions: {}, templates: [{ name: 'Card 1', front: '{{Front}}', back: '{{Back}}' }] }] };
+
+// A completed Responses API reply whose final message holds the generated notes,
+// or the given text verbatim.
+export function openAiReply(notes) {
 	return {
 		json: {
-			id: 'chatcmpl-test',
-			object: 'chat.completion',
-			created: 0,
+			id: 'resp_test',
+			object: 'response',
+			created_at: 0,
 			model: 'test-model',
-			choices: choices.map((cards, index) => ({
-				index,
-				finish_reason: 'stop',
-				message: { role: 'assistant', content: typeof cards === 'string' ? cards : JSON.stringify({ questions_answers: cards }) },
-			})),
+			status: 'completed',
+			error: null,
+			incomplete_details: null,
+			output: [{
+				type: 'message', id: 'msg_test', role: 'assistant', status: 'completed',
+				content: [{ type: 'output_text', annotations: [], text: typeof notes === 'string' ? notes : JSON.stringify({
+					notes: notes.map(note => generatedNote(note)), note_issues: [],
+				}) }],
+			}],
 		},
 	};
 }
@@ -160,12 +207,31 @@ export function openAiError(status, message, code) {
 }
 
 // ---- Fake AnkiConnect ----
-// Answers like AnkiConnect 6: deckNames, and multi with one addNote per card.
+// Answers like AnkiConnect 6: deckNames, and multi with one addNote per note.
 
-export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null, multiResult } = {}) {
+export const BASIC_NOTE_TYPE = { id: 100, fields: ['Front', 'Back'], descriptions: ['', ''], templates: { 'Card 1': { Front: '{{Front}}', Back: '{{FrontSide}}\n<hr id=answer>\n{{Back}}' } } };
+export const CLOZE_NOTE_TYPE = { id: 200, fields: ['Text', 'Back Extra'], descriptions: ['', ''], templates: { Cloze: { Front: '{{cloze:Text}}', Back: '{{cloze:Text}}<br>{{Back Extra}}' } } };
+
+// storeMedia answers storeMediaFile: by default it stores the file under the name it was given.
+export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null, multiResult, noteTypes = { Basic: BASIC_NOTE_TYPE }, storeMedia = filename => ({ result: filename, error: null }) } = {}) {
 	const added = [];
+	const media = [];
+	const types = structuredClone(noteTypes);
 	fake.ankiHandler = (body) => {
 		if (body.action === 'deckNames') return { json: { result: decks, error: null } };
+		if (body.action === 'modelNamesAndIds') return { json: { result: Object.fromEntries(Object.entries(types).map(([name, type]) => [name, type.id])), error: null } };
+		if (body.action === 'modelNames') return { json: { result: Object.keys(types), error: null } };
+		if (['modelFieldNames', 'modelTemplates', 'modelFieldDescriptions'].includes(body.action)) {
+			const type = types[body.params.modelName];
+			if (!type) return { json: { result: null, error: `model was not found: ${body.params.modelName}` } };
+			return { json: { result: body.action === 'modelFieldNames' ? type.fields : body.action === 'modelTemplates' ? type.templates : type.descriptions ?? [], error: null } };
+		}
+		if (body.action === 'canAddNotes') return { json: { result: body.params.notes.map(() => true), error: null } };
+		if (body.action === 'storeMediaFile') {
+			const answer = storeMedia(body.params.filename);
+			if (!answer.error) media.push({ filename: body.params.filename, data: body.params.data });
+			return { json: answer };
+		}
 		if (body.action === 'multi') {
 			if (multiResult) return { json: multiResult(body) };
 			const result = body.params.actions.map((a) => {
@@ -179,7 +245,7 @@ export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null
 		}
 		return { json: { result: null, error: `unsupported action ${body.action}` } };
 	};
-	return { added };
+	return { added, types, media };
 }
 
 // Every AnkiConnect action the plugin sent, sub-actions of `multi` included.
