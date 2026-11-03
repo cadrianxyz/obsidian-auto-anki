@@ -268,6 +268,7 @@ see the [provider SDK and API audit](provider-api-audit.md).
 | API keys | Obsidian's Keychain on this computer. |
 | Your configured models, their settings and whether they are enabled | The plugin's `data.json` settings file. |
 | Enabled Anki note types | The plugin's `data.json` settings file. |
+| Tag choices and your extra tags (see [Tags](../README.md#tags)) | The plugin's `data.json` settings file. Extra tags changed for one export aren't saved. |
 | Public model names and abilities | A separate `model-catalog-cache.json` file in the installed plugin folder. |
 | The provider's current model list | Memory while the plugin is running; it is fetched again on a later settings visit. |
 

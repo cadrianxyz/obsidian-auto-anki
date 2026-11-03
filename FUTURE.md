@@ -5,7 +5,8 @@
 # Tracking which notes have cards ("carded" tracking)
 
 Left out of the current plan in October 2026: the plan doesn't track whether a note already has cards.
-With tagging on (the default), each card records the model that made it in its Anki tags instead.
+From 1.1, a card can record the model that made it in its Anki tags, but only if the user turns
+tagging on (it's off by default), so tags can't stand in for tracking.
 
 **What it would add:**
 
@@ -34,8 +35,9 @@ With tagging on (the default), each card records the model that made it in its A
 
 ## The design worked out so far
 
-With models now recorded in Anki tags, the index wouldn't need to store a model per card: just
-the Anki note IDs, which makes it smaller still.
+Anki tags can't replace the model stored per card below. Tagging is optional and off by
+default, the user can turn off any option or the `auto-anki::` prefix, and tags can be edited
+in Anki. So the index keeps its own record of which model made each card.
 
 Stored in its own file, **`card-index.json`**, in the plugin's folder next to `data.json`. Nothing
 is written into notes. It's written compactly, without indentation; laid out here for reading:

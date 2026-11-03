@@ -32,7 +32,9 @@ Your notes are sent to the provider you choose when you generate cards. Nothing 
     - Set **AnkiConnect address** if needed. The default is `http://127.0.0.1:8765`, a full address, not just a port.
     - Under **Note types**, turn on the existing Anki note types the AI may generate. Use the refresh button beside **Note types** after you change the address or your note types in Anki. The field descriptions shown there come from Anki, so describe your fields in Anki if you want the AI to know what they are for.
     - Under **Default deck**, choose the deck new notes start in. You can still pick another deck each time you export.
-6. Open **Generation** to choose coverage, whether to send diagrams, and your extra instructions. Then run an export command.
+6. Open **Generation** to choose coverage, whether to send diagrams, and your extra instructions. Then run an export
+7. Optionally, open **Anki → Tags** to tag new Anki notes (see [Tags](#tags)).
+ command.
 
 API keys are saved in Obsidian's Keychain on this device, not in your vault. The Keychain does not sync, so enter your provider keys once on each device. Obsidian encrypts Keychain secrets using the operating system's secret store when available; **Settings → Keychain** reports when it is unavailable.
 
@@ -43,6 +45,33 @@ API keys are saved in Obsidian's Keychain on this device, not in your vault. The
 > **Upgrading to 0.3.0:** earlier versions stored your OpenAI API key in plain text in the plugin's `data.json`, inside your vault, so anything that copies your vault (sync, backups, git) copied the key too. 0.3.0 moves it into Obsidian's Keychain automatically the first time it loads, removes it from `data.json`, and shows a notice when it has. Older copies of your vault may still contain the key, so consider replacing it at OpenAI. On any other device where you use the same vault, enter the key once in the Auto Anki settings. If one of those devices has an Obsidian older than 1.11.4, it stays on 0.2.2, which only reads the key from `data.json`: update Obsidian there too, or that device will keep asking for the key.
 
 > **Also in 0.3.0:** the temperature, top-p, frequency penalty and presence penalty settings are gone. Current OpenAI models only accept their default values, so changing them made requests fail. **Reasoning effort** replaces them as the way to trade speed and cost against quality. **Maximum tokens per question** is replaced by **Maximum output tokens**, a single cap per request that includes the model's reasoning. 0.3.0 needs Obsidian 1.11.4 or newer.
+
+## Tags
+
+Auto Anki can tag the Anki notes it adds, so you can later find, compare or delete them in Anki: for example, every note one model made. **Tagging is off until you turn it on** in **Settings → Auto Anki → Anki → Tags**, with **Tag Anki notes**. While it's off, new notes get no tags, and the other options on the page are greyed out.
+
+Once tagging is on, choose which tags to add:
+
+| Option | Default | Adds | Example |
+|---|---|---|---|
+| **Model** | on | The provider and model that made the note | `auto-anki::anthropic::claude-haiku-5-5` |
+| **Reasoning effort** | off | The reasoning effort chosen for that run. `default` means the model used its own default | `auto-anki::effort::high` |
+| **Prompt version** | off | The version of the built-in note-writing instructions. It ends in `-edited` if you replaced them with your own (**Generation → Advanced**); extra instructions don't count | `auto-anki::prompt::1.0.0`, `auto-anki::prompt::1.0.0-edited` |
+| **Prefix tags with `auto-anki::`** | on | Puts `auto-anki::` in front of the three tags above | Off: `anthropic::claude-haiku-5-5` |
+| **Extra tags** | empty | Your own tags, for every new note. Separate them with spaces; use `::` for nested tags | `obsidian uni::cs101` |
+
+The provider in the model tag is its ID (`openai` or `anthropic`), not the name shown in settings, so it never changes. The page's **Example** line shows the tags one new note would get with your default model.
+
+**The prefix keeps the plugin's tags together.** With it on, searching `tag:auto-anki::*` in Anki's browser finds every note these tags were added to, and `tag:auto-anki::anthropic::*` finds every note a Claude model made. With it off, tags such as `effort::high` can mix with your own tags of the same name. The prefix is never added to your extra tags.
+
+**Changing tags for one export.** While tagging is on, the deck step has a collapsed **Tags** section. Its title lists the tags the notes will get. Open it to edit **Extra tags for this export**: it starts with your extra tags, and changes apply to that export only. Your settings stay the same.
+
+A few rules:
+
+- Tags are added only when a note is created. Auto Anki never changes the tags of notes already in Anki.
+- The tags come from the moment you click **Generate**. Changing tag settings while you review doesn't change the tags of those notes.
+- Spaces in a model ID become `_`, and `::` becomes `-`, so a model ID can't add extra levels to Anki's tag list. Your extra tags are kept as you wrote them, except that empty levels are dropped (`a::::b` becomes `a::b`). A tag repeated, even in different capitals, is added once, since Anki treats those as the same tag.
+- Earlier versions tagged every note `auto-gpt-imported`. That tag is no longer added; notes that already have it keep it.
 
 ## Feature Details
 
