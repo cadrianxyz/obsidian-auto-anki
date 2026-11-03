@@ -4,7 +4,7 @@ Plugin for [Obsidian.md](https://obsidian.md/) that uses OpenAI or Claude to gen
 
 > The plugin **only works on desktop**.
 
-> **1.0 development build:** the requirements and setup below describe the current development version. See the [detailed setup guide](docs/model-discovery.md) for provider, model, generation and note-type settings. The screenshots below still show the 0.3 interface.
+> For provider, model, generation and note-type settings in detail, see the [setup guide](docs/model-discovery.md).
 
 The plugin adds two commands to Obsidian:
 - _Generate notes from current file_
@@ -32,9 +32,9 @@ Your notes are sent to the provider you choose when you generate cards. Nothing 
     - Set **AnkiConnect address** if needed. The default is `http://127.0.0.1:8765`, a full address, not just a port.
     - Under **Note types**, turn on the existing Anki note types the AI may generate. Use the refresh button beside **Note types** after you change the address or your note types in Anki. The field descriptions shown there come from Anki, so describe your fields in Anki if you want the AI to know what they are for.
     - Under **Default deck**, choose the deck new notes start in. You can still pick another deck each time you export.
-6. Open **Generation** to choose coverage, whether to send diagrams, and your extra instructions. Then run an export
+6. Open **Generation** to choose coverage, whether to send diagrams, and your extra instructions.
 7. Optionally, open **Anki → Tags** to tag new Anki notes (see [Tags](#tags)).
- command.
+8. Open a note and run one of the commands.
 
 API keys are saved in Obsidian's Keychain on this device, not in your vault. The Keychain does not sync, so enter your provider keys once on each device. Obsidian encrypts Keychain secrets using the operating system's secret store when available; **Settings → Keychain** reports when it is unavailable.
 
