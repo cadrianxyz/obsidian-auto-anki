@@ -7,12 +7,10 @@ templates create the flashcards you study: one note can create several cards.
 The AI service, such as OpenAI or Claude, is the **provider**. The **model** is the particular AI
 you choose from that provider. Each model can keep its own settings.
 
-This guide describes the settings in the 1.0 development build. OpenAI and Claude
-both generate Anki notes through the same dialog and use your saved Anki notes preferences.
-It generates text directly into the fields of your enabled Anki note types,
-including custom types with more than two fields.
-Diagrams can inform those entries; displaying images on cards and rich formatting
-are still being implemented.
+OpenAI and Claude both generate Anki notes through the same dialog and use your
+saved preferences. Text goes directly into the fields of your enabled Anki note
+types, including custom types with more than two fields. Diagrams can inform those
+notes, and can be shown on the cards.
 
 ## Set up a provider
 
@@ -137,15 +135,11 @@ review, export stops and keeps your generated notes. Restore the original type t
 retry, or generate again using its updated definition. Settings changes during
 review do not redirect notes already generated.
 
-Earlier development builds stored field mappings. Upgrading preserves the enabled
-note-type selections from those mappings and removes the obsolete field assignments.
-The new settings schema prevents an older development build from overwriting them.
-
 ## Generate and review Anki notes
 
-Open a note and run **Auto Anki: Export current file to Anki** from Obsidian's
+Open a note and run **Auto Anki: Generate notes from current file** from Obsidian's
 command palette. To use only part of the note, select it and run **Auto Anki:
-Export highlighted text to Anki**. Anki and AnkiConnect must be running.
+Generate notes from highlighted text**. Anki and AnkiConnect must be running.
 
 The dialog shows your selected model, which material will be sent, and any
 diagrams that must be skipped. Frontmatter and Obsidian comments are excluded.
@@ -165,14 +159,14 @@ that guidance for this run only, without changing your saved settings. Markdown,
 spacing and line breaks are preserved.
 
 Click **Generate Anki notes** to send the request. Review the resulting Anki notes,
-select the ones to keep, then choose an existing Anki deck and export. Each entry
-shows its note type and all its field values as text, including cloze markup and
-intentionally empty fields. Rendered card previews are a proposed 1.1.0 feature,
-not part of this review screen. Suspected
-mistakes in the source and skipped content are shown alongside the generated notes, even
+select the ones to keep, then choose an existing Anki deck and export. With tagging
+on, the deck step also lets you change this export's extra tags (see
+[Tags](../README.md#tags)). Each entry shows its note type and all its field values
+as text, including cloze markup and intentionally empty fields. Suspected mistakes
+in the source and skipped content are shown alongside the generated notes, even
 when no Anki notes can be generated. If Anki disconnects or refuses an entry, the
 export dialog stays open for retry; entries already confirmed as added are left
-out of that retry. **Back to notes** returns to the remaining entries. The plugin
+out of that retry. **Back to selection** returns to the remaining entries. The plugin
 does not change your source note. Before adding notes, it asks Anki whether each
 can be added (`canAddNotes`). Rejected notes stay in review; eligible notes are
 added and their individual results are checked.
@@ -268,6 +262,7 @@ see the [provider SDK and API audit](provider-api-audit.md).
 | API keys | Obsidian's Keychain on this computer. |
 | Your configured models, their settings and whether they are enabled | The plugin's `data.json` settings file. |
 | Enabled Anki note types | The plugin's `data.json` settings file. |
+| Tag choices and your extra tags (see [Tags](../README.md#tags)) | The plugin's `data.json` settings file. Extra tags changed for one export aren't saved. |
 | Public model names and abilities | A separate `model-catalog-cache.json` file in the installed plugin folder. |
 | The provider's current model list | Memory while the plugin is running; it is fetched again on a later settings visit. |
 
