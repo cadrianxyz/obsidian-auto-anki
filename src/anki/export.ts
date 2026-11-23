@@ -8,7 +8,8 @@ import type { Diagram } from '../source-note/images';
 
 export interface AnkiExportOutcome { added: number; errors: string[]; remaining: GeneratedAnkiNote[] }
 
-export async function addNotesToAnki(notes: readonly GeneratedAnkiNote[], snapshot: AnkiDestinations, deck: string, diagrams: readonly Diagram[]): Promise<AnkiExportOutcome> {
+/** `tags` are added to every new note, as given; they're built and cleaned in tags.ts. */
+export async function addNotesToAnki(notes: readonly GeneratedAnkiNote[], snapshot: AnkiDestinations, deck: string, diagrams: readonly Diagram[], tags: readonly string[]): Promise<AnkiExportOutcome> {
 	if (!notes.length) return { added: 0, errors: [], remaining: [] };
 	const diagramById = new Map(diagrams.map(diagram => [diagram.path, diagram]));
 	const prepared = await Promise.all(notes.map(async note => {
@@ -20,7 +21,7 @@ export async function addNotesToAnki(notes: readonly GeneratedAnkiNote[], snapsh
 			files.set(id, { name: await ankiMediaName(diagram), diagram });
 		}
 		const fields = Object.fromEntries(Object.entries(note.fields).map(([name, value]) => [name, renderAnkiField(value, new Map([...files].map(([id, file]) => [id, file.name])))]));
-		return { files, payload: { deckName: deck, modelName: note.noteType, fields, tags: ['auto-gpt-imported'] } };
+		return { files, payload: { deckName: deck, modelName: note.noteType, fields, tags: [...tags] } };
 	}));
 	await revalidateDestinations(snapshot, notes.map(note => note.noteType));
 	const client = new AnkiClient(snapshot.url);

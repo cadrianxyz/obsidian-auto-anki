@@ -147,6 +147,8 @@ export class Setting {
 	constructor(containerEl) {
 		this.settingEl = new FakeElement('div', { cls: 'setting-item' });
 		this.settingEl.setting = this;
+		this.descEl = new FakeElement('div', { cls: 'setting-item-description' });
+		this.settingEl.appendChild(this.descEl);
 		this.components = [];
 		this.name = '';
 		this.heading = false;

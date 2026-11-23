@@ -3,15 +3,18 @@ import type AutoAnkiPlugin from '../../main';
 import { verifyNoteType } from '../../anki/note-types';
 import { DefaultDeckModal } from '../decks/default-deck-modal';
 import { ankiUrl, DEFAULT_ANKI_URL } from '../../settings/schema';
+import { TagSettingsPage } from './tags';
 
 /** Anki owns the definitions. Settings only choose which existing types may be generated. */
 export class AnkiSettings {
 	private opened = false;
-	constructor(private readonly plugin: AutoAnkiPlugin) {}
-	hide(): void { this.opened = false; }
+	private readonly tags: TagSettingsPage;
+	constructor(private readonly plugin: AutoAnkiPlugin) { this.tags = new TagSettingsPage(plugin); }
+	hide(): void { this.opened = false; this.tags.hide(); }
 	owns(key: string): boolean { return key.startsWith('anki.'); }
 
 	getValue(key: string): unknown {
+		if (this.tags.owns(key)) return this.tags.getValue(key);
 		if (key === 'anki.url') return this.plugin.settings.anki.url;
 		return this.plugin.settings.anki.enabledNoteTypes.includes(this.nameFromKey(key));
 	}
@@ -19,7 +22,8 @@ export class AnkiSettings {
 	private nameFromKey(key: string): string { return decodeURIComponent(key.slice('anki.noteType.'.length)); }
 
 	async setValue(key: string, value: unknown): Promise<void> {
-		if (key === 'anki.url') {
+		if (this.tags.owns(key)) await this.tags.setValue(key, value);
+		else if (key === 'anki.url') {
 			if (typeof value === 'string' && ankiUrl(value, '') === value.trim()) {
 				await this.plugin.updateSettings(settings => { settings.anki.url = value.trim(); }, false);
 				this.plugin.ankiTypes.verified = false;
@@ -43,6 +47,7 @@ export class AnkiSettings {
 					.onClick(() => new DefaultDeckModal(this.plugin.app, anki.url, this.plugin.settings.anki.defaultDeck, async deck => {
 						await this.plugin.updateSettings(settings => { settings.anki.defaultDeck = deck; });
 					}).open())); } },
+			this.tags.page(),
 			{ type: 'group', heading: 'Note types',
 				search: { placeholder: 'Search note types', match: (definition, query) => {
 					const fields = typeof definition.desc === 'string' ? definition.desc : '';

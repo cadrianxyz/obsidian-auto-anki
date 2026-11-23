@@ -23,7 +23,7 @@ export class AutoAnkiSettingTab extends PluginSettingTab {
 			{ type: 'group', heading: 'AI providers', items: this.providers.definitions() },
 			{ type: 'group', items: [
 				{ type: 'page', name: 'Generation', desc: 'Coverage, diagrams and instructions for writing your Anki notes.', items: this.generation.definitions() },
-				{ type: 'page', name: 'Anki', desc: 'Choose existing note types and the fields that receive generated content.', items: this.anki.definitions() },
+				{ type: 'page', name: 'Anki', desc: 'The AnkiConnect address, note types, default deck and tags.', items: this.anki.definitions() },
 			] },
 		];
 	}

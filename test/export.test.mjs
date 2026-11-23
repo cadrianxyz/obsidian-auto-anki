@@ -552,7 +552,7 @@ describe('exporting', () => {
 		// What was added to Anki: one Basic note per generated entry, in the chosen deck.
 		assert.deepEqual(anki.added.map((n) => [n.deckName, n.modelName, n.fields.Front, n.fields.Back]),
 			NOTES.map((c) => ['Biology', 'Basic', c.q, c.a]));
-		assert.deepEqual(anki.added[0].tags, ['auto-gpt-imported']);
+		assert.deepEqual(anki.added[0].tags, [], 'tagging is off by default, and the 0.x tag is gone');
 		assert.equal(fake.notices.at(-1), 'Successfully exported 3 note(s) to Anki!');
 		assert.deepEqual([...new Set(ankiActionsSent())].sort(), ['addNote', 'canAddNotes', 'deckNames', 'modelFieldDescriptions', 'modelFieldNames', 'modelNamesAndIds', 'modelTemplates', 'multi']);
 	});
@@ -821,5 +821,138 @@ describe('what the user is told when something goes wrong', () => {
 		await decks.opened;
 		assert.match(fake.notices.join('\n'), /Could not connect to Anki/);
 		assert.ok(buttonsIn(decks.contentEl).some((b) => b.text === 'Refresh'), 'no way to retry');
+	});
+});
+
+describe('tags on Anki notes', () => {
+	const MODEL = 'gpt-6-luna';
+	function tagged(tags = {}, change = () => {}) {
+		const settings = createDefaultSettings();
+		const model = { ...createModelSettings(MODEL), reasoningEffort: 'low', capabilities: { reasoningEfforts: ['low', 'high'] } };
+		settings.providers.openai.models = [model];
+		settings.defaultModel = { providerId: 'openai', modelId: MODEL };
+		settings.anki.tags = { ...settings.anki.tags, enabled: true, ...tags };
+		change(settings);
+		return settings;
+	}
+	// Generates, selects every note, and returns the deck step.
+	async function deckStep(plugin, beforeGenerate = async () => {}) {
+		const ask = await startExport(plugin);
+		await beforeGenerate(ask);
+		await button(ask, 'Generate Anki notes').click();
+		const choose = lastModal();
+		await button(choose, 'Select all').click();
+		await button(choose, 'Confirm selection').click();
+		const decks = lastModal();
+		await decks.opened;
+		return decks;
+	}
+	const section = decks => decks.contentEl.all().find(el => el.tagName === 'details' && /auto-anki-tags/.test(el.className));
+	const title = decks => section(decks).children.find(el => el.tagName === 'summary');
+	const tagBox = decks => textBox(decks, 'Extra tags for this export');
+
+	test('with tagging off, notes get no tags and the deck step shows nothing about tags', async () => {
+		const anki = ankiServer();
+		openai.handler = () => openAiReply(NOTES);
+		const plugin = await device({ settings: tagged({ enabled: false, extra: 'obsidian' }) });
+		const decks = await deckStep(plugin);
+		assert.equal(section(decks), undefined);
+		assert.equal(settingsIn(decks.contentEl).find(row => row.name === 'Extra tags for this export'), undefined);
+		await button(decks, 'Confirm and export').click();
+		assert.equal(anki.added.length, 3);
+		assert.ok(anki.added.every(note => note.tags.length === 0));
+	});
+
+	test('with tagging on, every note gets the model tag by default', async () => {
+		const anki = ankiServer();
+		openai.handler = () => openAiReply(NOTES);
+		const decks = await deckStep(await device({ settings: tagged() }));
+		await button(decks, 'Confirm and export').click();
+		assert.equal(anki.added.length, 3);
+		assert.ok(anki.added.every(note => JSON.stringify(note.tags) === JSON.stringify([`auto-anki::openai::${MODEL}`])));
+	});
+
+	test('every option: the effort chosen for this run, and -edited for your own instructions', async () => {
+		const anki = ankiServer();
+		openai.handler = () => openAiReply(NOTES);
+		const settings = tagged({ reasoningEffort: true, promptVersion: true }, s => {
+			s.notes.noteWritingInstructions = { text: 'My rules', defaultVersion: '1.0.0' };
+		});
+		const decks = await deckStep(await device({ settings }), async ask => {
+			await waitForPreparation(ask);
+			await textBox(ask, 'Reasoning effort').type('high');
+		});
+		await button(decks, 'Confirm and export').click();
+		assert.deepEqual(anki.added[0].tags, [`auto-anki::openai::${MODEL}`, 'auto-anki::effort::high', 'auto-anki::prompt::1.0.0-edited']);
+	});
+
+	test('with the prefix off, only the auto-anki part is left out', async () => {
+		const anki = ankiServer();
+		openai.handler = () => openAiReply(NOTES);
+		const decks = await deckStep(await device({ settings: tagged({ prefix: false, reasoningEffort: true }) }));
+		await button(decks, 'Confirm and export').click();
+		assert.deepEqual(anki.added[0].tags, [`openai::${MODEL}`, 'effort::low']);
+	});
+
+	test('the Tags section starts collapsed, and its title lists every tag as code', async () => {
+		ankiServer();
+		openai.handler = () => openAiReply(NOTES);
+		const decks = await deckStep(await device({ settings: tagged({ extra: 'obsidian uni::cs101' }) }));
+		assert.ok(section(decks), 'no Tags section');
+		assert.notEqual(section(decks).attrs.open, true);
+		assert.equal(title(decks).textContent, `Tags: auto-anki::openai::${MODEL} obsidian uni::cs101`);
+		const codes = title(decks).all().filter(el => el.tagName === 'code').map(el => el.text);
+		assert.deepEqual(codes, [`auto-anki::openai::${MODEL}`, 'obsidian', 'uni::cs101']);
+		assert.equal(tagBox(decks).value, 'obsidian uni::cs101');
+		assert.doesNotMatch(section(decks).textContent, /Added automatically/);
+	});
+
+	test('the box changes the tags for this export only, and the title follows it', async () => {
+		const anki = ankiServer();
+		openai.handler = () => openAiReply(NOTES);
+		const plugin = await device({ settings: tagged({ extra: 'obsidian' }) });
+		const decks = await deckStep(plugin);
+		await tagBox(decks).type('exam-week  uni::cs101');
+		assert.equal(title(decks).textContent, `Tags: auto-anki::openai::${MODEL} exam-week uni::cs101`);
+		await button(decks, 'Confirm and export').click();
+		assert.deepEqual(anki.added[0].tags, [`auto-anki::openai::${MODEL}`, 'exam-week', 'uni::cs101']);
+		assert.equal(plugin.settings.anki.tags.extra, 'obsidian');
+		assert.equal(readDataJson(plugin.app.disk).anki.tags.extra, 'obsidian');
+	});
+
+	test('changing settings after generating does not change these notes\' tags', async () => {
+		const anki = ankiServer();
+		openai.handler = () => openAiReply(NOTES);
+		const plugin = await device({ settings: tagged({ extra: 'obsidian' }) });
+		const decks = await deckStep(plugin);
+		await plugin.updateSettings(s => { s.anki.tags = { ...s.anki.tags, enabled: false, model: false, extra: 'changed' }; });
+		await button(decks, 'Confirm and export').click();
+		assert.deepEqual(anki.added[0].tags, [`auto-anki::openai::${MODEL}`, 'obsidian']);
+	});
+
+	test('going back to the selection keeps what was typed in the box', async () => {
+		ankiServer();
+		openai.handler = () => openAiReply(NOTES);
+		const decks = await deckStep(await device({ settings: tagged({ extra: 'obsidian' }) }));
+		await tagBox(decks).type('exam-week');
+		await button(decks, 'Back to selection').click();
+		await button(lastModal(), 'Confirm selection').click();
+		const again = lastModal();
+		await again.opened;
+		assert.equal(tagBox(again).value, 'exam-week');
+	});
+
+	test('retrying notes Anki refused uses what the box holds then', async () => {
+		let refuse = true;
+		const anki = ankiServer({ refuse: note => (refuse && note.fields.Front === NOTES[1].q ? 'collection is busy' : null) });
+		openai.handler = () => openAiReply(NOTES);
+		const decks = await deckStep(await device({ settings: tagged({ model: false, extra: 'first' }) }));
+		await button(decks, 'Confirm and export').click();
+		assert.equal(anki.added.length, 2);
+		assert.ok(decks.isOpen, 'the deck step stays open for the refused note');
+		refuse = false;
+		await tagBox(decks).type('second');
+		await button(decks, 'Confirm and export').click();
+		assert.deepEqual(anki.added.map(note => note.tags), [['first'], ['first'], ['second']]);
 	});
 });

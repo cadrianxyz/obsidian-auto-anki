@@ -20,6 +20,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Copies this version's section of CHANGELOG.md, from its "## [<tag>]" heading up to
+      # the next "## " heading. Runs first so a missing section stops the release early.
+      - name: Extract release notes
+        run: |
+          awk -v tag="$GITHUB_REF_NAME" '
+            /^## / { if (found) exit; if (index($0, "## [" tag "]") == 1) { found = 1; next } }
+            found
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
+            echo "::error::CHANGELOG.md has no section for $GITHUB_REF_NAME"
+            exit 1
+          fi
+
       - name: Use Node.js
         uses: actions/setup-node@v6
         with:
@@ -48,6 +61,6 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --title="$GITHUB_REF_NAME" \
-            --generate-notes \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             main.js manifest.json styles.css \
             "$PLUGIN_NAME-$GITHUB_REF_NAME.zip"

@@ -79,7 +79,7 @@ describe('Anki eligibility checks and export results', () => {
   const { snapshot, server } = await setup(); const handler = fake.ankiHandler;
   const notes = [note, { ...note, fields: { ...note.fields, Term: 'salut' } }];
   fake.ankiHandler = body => body.action === 'canAddNotes' ? { json: { result: [false, true], error: null } } : handler(body);
-  const outcome = await addNotesToAnki(notes, snapshot, 'Default', []);
+  const outcome = await addNotesToAnki(notes, snapshot, 'Default', [], []);
   assert.equal(outcome.added, 1); assert.deepEqual(outcome.remaining, [note]); assert.match(outcome.errors[0], /duplicate/);
   assert.equal(server.added[0].fields.Term, 'salut');
   assert.deepEqual(fake.ankiRequests.find(r => r.body.action === 'canAddNotes').body.params.notes[1], server.added[0]);
@@ -87,31 +87,31 @@ describe('Anki eligibility checks and export results', () => {
  test('all ineligible notes cause no add operation', async () => {
   const { snapshot, server } = await setup(); const handler = fake.ankiHandler;
   fake.ankiHandler = body => body.action === 'canAddNotes' ? { json: { result: [false], error: null } } : handler(body);
-  const outcome = await addNotesToAnki([note], snapshot, 'Default', []);
+  const outcome = await addNotesToAnki([note], snapshot, 'Default', [], []);
   assert.deepEqual(outcome.remaining, [note]); assert.equal(server.added.length, 0);
   assert.ok(!fake.ankiRequests.some(r => r.body.action === 'multi'));
  });
  for (const bad of [null, [], [true, false], ['true']]) test(`unreadable eligibility response ${JSON.stringify(bad)} adds nothing`, async () => {
   const { snapshot, server } = await setup(); const handler = fake.ankiHandler;
   fake.ankiHandler = body => body.action === 'canAddNotes' ? { json: { result: bad, error: null } } : handler(body);
-  await assert.rejects(addNotesToAnki([note], snapshot, 'Default', []), /eligibility/); assert.equal(server.added.length, 0);
+  await assert.rejects(addNotesToAnki([note], snapshot, 'Default', [], []), /eligibility/); assert.equal(server.added.length, 0);
  });
  test('actual rejection after eligibility succeeds remains available for retry', async () => {
   const { snapshot } = await setup({ refuse: () => 'duplicate created during export' });
-  const outcome = await addNotesToAnki([note], snapshot, 'Default', []);
+  const outcome = await addNotesToAnki([note], snapshot, 'Default', [], []);
   assert.equal(outcome.added, 0); assert.deepEqual(outcome.remaining, [note]); assert.match(outcome.errors[0], /during export/);
  });
  test('each native field is rendered for Anki; the review copy keeps its Markdown for retry', async () => {
   const { snapshot, server } = await setup(); const handler = fake.ankiHandler;
   const marked = { ...note, fields: { Term: 'x', Meaning: '**hello** $a<b$', Example: '' } };
   fake.ankiHandler = body => body.action === 'canAddNotes' ? { json: { result: [false], error: null } } : handler(body);
-  const outcome = await addNotesToAnki([marked], snapshot, 'Default', []);
+  const outcome = await addNotesToAnki([marked], snapshot, 'Default', [], []);
   assert.deepEqual(fake.ankiRequests.find(r => r.body.action === 'canAddNotes').body.params.notes[0].fields, { Term: 'x', Meaning: '<strong>hello</strong> \\(a&lt;b\\)', Example: '' });
   assert.deepEqual(outcome.remaining, [marked]); assert.equal(server.added.length, 0);
  });
  test('changed type blocks both eligibility and additions', async () => {
   const { snapshot, server } = await setup(); server.types.Vocabulary.id++;
-  await assert.rejects(addNotesToAnki([note], snapshot, 'Default', []), /changed/);
+  await assert.rejects(addNotesToAnki([note], snapshot, 'Default', [], []), /changed/);
   assert.ok(!fake.ankiRequests.some(r => ['canAddNotes', 'multi'].includes(r.body.action)));
  });
 });

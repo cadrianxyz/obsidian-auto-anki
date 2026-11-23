@@ -1,4 +1,4 @@
-import { Modal, Notice, Setting, type App, type ButtonComponent, type DropdownComponent } from 'obsidian';
+import { Modal, Notice, Setting, type App, type ButtonComponent, type DropdownComponent, type TextComponent } from 'obsidian';
 import type { ModelSettings, PluginSettings } from '../settings/schema';
 import { OutputMode, type ResolvedOutputMode } from '../ai/generation';
 import { PROVIDER_NAMES, type ProviderId } from '../ai/providers';
@@ -14,6 +14,8 @@ import { addNotesToAnki } from '../anki/export';
 import type { GenerationStatus } from './generation-status';
 import { renderDeckPicker } from './decks/deck-picker';
 import { revalidateDestinations, type AnkiDestinations } from '../anki/note-types';
+import { noteTags, promptVersionTag, type TagRun, type TagSettings } from '../anki/tags';
+import { showTags } from './tags/tag-display';
 
 function showImageInputWarning(container: HTMLElement, policy: ImageInputPolicy, embeddedCount: number, preparedCount: number): void {
 	const count = policy.action === 'skip' ? embeddedCount : preparedCount;
@@ -48,6 +50,16 @@ function showGenerationMessages(container: HTMLElement, result: Pick<GenerationR
 	}
 }
 
+/**
+ * The tags for one generated set. The settings and run details are fixed when Generate is
+ * pressed; `extra` is the deck step's box, kept when going back to the selection.
+ */
+interface ExportTags {
+	readonly settings: TagSettings;
+	readonly run: TagRun;
+	extra: string;
+}
+
 export interface ExportModel {
 	providerId: ProviderId;
 	apiKey: string;
@@ -77,6 +89,7 @@ export class ExportModal extends Modal {
 		private readonly address: string,
 		private readonly defaultDeck: string,
 		private readonly preferences: PluginSettings['notes'],
+		private readonly tags: TagSettings,
 		/** True when only selected text is sent. Not named `selection`, which Obsidian's Modal uses for its own state. */
 		private readonly fromSelection: boolean,
 		private readonly prepareDestinations: () => Promise<AnkiDestinations>,
@@ -253,13 +266,18 @@ export class ExportModal extends Modal {
 		try {
 			await revalidateDestinations(destinations, destinations.types.map(type => type.name));
 			if (this.closed) return;
+			// Captured before the request, so a settings change during review can't alter these notes' tags.
+			const tags: ExportTags = {
+				settings: structuredClone(this.tags), extra: this.tags.extra,
+				run: { providerId, modelId: model.id, reasoningEffort: model.reasoningEffort, promptVersion: promptVersionTag(this.preferences.noteWritingInstructions) },
+			};
 			const result = await generateNotes(providerId, apiKey, model, this.preferences, this.run, this.source, this.diagrams, destinations, this.controller.signal);
 			if (this.closed) return;
 			if (model.outputMode === OutputMode.Auto) await this.rememberOutputMode(this.selectedModel, result.outputMode);
 			if (this.closed) return;
 			this.generationStatus.setState('idle');
 			this.close();
-			new ChoiceModal(this.app, new NoteSelection(result.notes), this.address, this.defaultDeck, result, destinations).open();
+			new ChoiceModal(this.app, new NoteSelection(result.notes), this.address, this.defaultDeck, result, destinations, tags).open();
 		}
 		catch (error) {
 			if (!this.closed) { this.generationStatus.setState('error'); new Notice(error instanceof Error ? error.message : 'Anki note generation failed.', 0); }
@@ -304,7 +322,7 @@ class NoteSelection {
 /** Lets the user pick which generated notes to export. Only the list scrolls; the buttons stay in view. */
 export class ChoiceModal extends Modal {
 	constructor(app: App, private readonly review: NoteSelection, private readonly address: string, private readonly deck: string,
-		private readonly feedback: RunFeedback, private readonly destinations: AnkiDestinations) {
+		private readonly feedback: RunFeedback, private readonly destinations: AnkiDestinations, private readonly tags: ExportTags) {
 		super(app);
 	}
 
@@ -353,7 +371,7 @@ export class ChoiceModal extends Modal {
 			button.setButtonText('Confirm selection').setCta().onClick(() => {
 				if (!review.chosen.size) return;
 				this.close();
-				new AnkiDeckModal(this.app, this.address, this.deck, review, this.destinations, this.feedback).open();
+				new AnkiDeckModal(this.app, this.address, this.deck, review, this.destinations, this.feedback, this.tags).open();
 			});
 		});
 		refresh();
@@ -372,6 +390,7 @@ export class AnkiDeckModal extends Modal {
 	private exporting = false;
 	private deckError?: string;
 	private readonly buttons: ButtonComponent[] = [];
+	private tagBox?: TextComponent;
 
 	constructor(
 		app: App,
@@ -380,6 +399,7 @@ export class AnkiDeckModal extends Modal {
 		private readonly review: NoteSelection,
 		private readonly destinations: AnkiDestinations,
 		private readonly feedback: RunFeedback,
+		private readonly tags: ExportTags,
 	) {
 		super(app);
 	}
@@ -407,6 +427,7 @@ export class AnkiDeckModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		this.buttons.length = 0;
+		this.tagBox = undefined;
 		this.titleEl.setText('Anki decks');
 
 		if (!this.loaded) {
@@ -428,6 +449,7 @@ export class AnkiDeckModal extends Modal {
 				onQuery: query => { this.query = query; },
 				onSelect: deck => { if (!this.exporting) this.selectedDeck = deck; },
 			});
+			this.renderTags(contentEl);
 		}
 
 		const footer = new Setting(contentEl).addButton(button => {
@@ -435,7 +457,7 @@ export class AnkiDeckModal extends Modal {
 			button.setButtonText('Back to selection').onClick(() => {
 				if (this.exporting) return;
 				this.close();
-				new ChoiceModal(this.app, this.review, this.address, this.selectedDeck, this.feedback, this.destinations).open();
+				new ChoiceModal(this.app, this.review, this.address, this.selectedDeck, this.feedback, this.destinations, this.tags).open();
 			});
 		});
 		if (this.decks.length) footer.addButton(button => {
@@ -445,8 +467,30 @@ export class AnkiDeckModal extends Modal {
 		this.updateButtons();
 	}
 
+	/** A collapsed Tags section, only while tagging is on. Its title lists the tags, so none are hidden. */
+	private renderTags(container: HTMLElement): void {
+		const { settings, run } = this.tags;
+		if (!settings.enabled) return;
+		const section = container.createEl('details', { cls: 'auto-anki-export-options auto-anki-tags' });
+		const summary = section.createEl('summary', { text: 'Tags: ' });
+		const list = summary.createSpan({ cls: 'auto-anki-tag-list' });
+		const update = (): void => showTags(list, noteTags(settings, run, this.tags.extra), 'none');
+		new Setting(section).setName('Extra tags for this export')
+			.setDesc('Starts with your extra tags. Changes apply to this export only; your settings stay the same.')
+			.addText(text => {
+				this.tagBox = text;
+				text.setPlaceholder('No extra tags').setValue(this.tags.extra).onChange(value => {
+					if (this.exporting) return;
+					this.tags.extra = value;
+					update();
+				});
+			});
+		update();
+	}
+
 	private updateButtons(): void {
 		for (const button of this.buttons) button.setDisabled(this.exporting);
+		this.tagBox?.setDisabled(this.exporting);
 	}
 
 	private async load(): Promise<void> {
@@ -463,7 +507,7 @@ export class AnkiDeckModal extends Modal {
 		this.updateButtons();
 		try {
 			if (this.address !== this.destinations.url) throw new Error('The Anki address does not match this generation. Return to review.');
-			const outcome = await addNotesToAnki(notes, this.destinations, this.selectedDeck, this.feedback.diagrams);
+			const outcome = await addNotesToAnki(notes, this.destinations, this.selectedDeck, this.feedback.diagrams, noteTags(this.tags.settings, this.tags.run, this.tags.extra));
 			this.review.removeAdded(outcome.remaining);
 			if (!outcome.errors.length) new Notice(`Successfully exported ${outcome.added} note(s) to Anki!`);
 			else {

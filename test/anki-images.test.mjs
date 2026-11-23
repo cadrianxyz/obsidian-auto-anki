@@ -73,7 +73,7 @@ describe('exporting images', () => {
 		const { server, snapshot } = await setup();
 		const queue = diagram('Notes/queue.png');
 		const name = await ankiMediaName(queue);
-		const outcome = await addNotesToAnki([note('Look: {{image:Notes/queue.png}} and again {{image:Notes/queue.png}}')], snapshot, 'Default', [queue]);
+		const outcome = await addNotesToAnki([note('Look: {{image:Notes/queue.png}} and again {{image:Notes/queue.png}}')], snapshot, 'Default', [queue], []);
 		assert.equal(outcome.added, 1);
 		assert.deepEqual(storeRequests(), [{ filename: name, data: queue.base64 }]);
 		assert.ok(actionIndex('storeMediaFile') < actionIndex('multi'));
@@ -84,13 +84,13 @@ describe('exporting images', () => {
 		const { snapshot } = await setup();
 		const a = diagram('Notes/a.png', [1]);
 		const b = diagram('Notes/b.png', [2]);
-		await addNotesToAnki([note('{{image:Notes/a.png}}')], snapshot, 'Default', [a, b]);
+		await addNotesToAnki([note('{{image:Notes/a.png}}')], snapshot, 'Default', [a, b], []);
 		assert.deepEqual(storeRequests().map(request => request.filename), [await ankiMediaName(a)]);
 	});
 
 	test('a note without images stores nothing', async () => {
 		const { snapshot } = await setup();
-		const outcome = await addNotesToAnki([note('Plain text')], snapshot, 'Default', [diagram('Notes/a.png')]);
+		const outcome = await addNotesToAnki([note('Plain text')], snapshot, 'Default', [diagram('Notes/a.png')], []);
 		assert.equal(outcome.added, 1);
 		assert.deepEqual(storeRequests(), []);
 	});
@@ -99,7 +99,7 @@ describe('exporting images', () => {
 		const { snapshot } = await setup();
 		const handler = fake.ankiHandler;
 		fake.ankiHandler = body => body.action === 'canAddNotes' ? { json: { result: [false], error: null } } : handler(body);
-		const outcome = await addNotesToAnki([note('{{image:Notes/a.png}}')], snapshot, 'Default', [diagram('Notes/a.png')]);
+		const outcome = await addNotesToAnki([note('{{image:Notes/a.png}}')], snapshot, 'Default', [diagram('Notes/a.png')], []);
 		assert.equal(outcome.added, 0);
 		assert.equal(outcome.remaining.length, 1);
 		assert.deepEqual(storeRequests(), []);
@@ -108,7 +108,7 @@ describe('exporting images', () => {
 	test('a GIF is stored as the original file, not the still frame that was sent', async () => {
 		const { snapshot } = await setup();
 		const gif = { path: 'Notes/motion.gif', mime: 'image/png', base64: encode([1]), stored: { extension: 'gif', base64: encode([71, 73, 70]) } };
-		const outcome = await addNotesToAnki([note('{{image:Notes/motion.gif}}')], snapshot, 'Default', [gif]);
+		const outcome = await addNotesToAnki([note('{{image:Notes/motion.gif}}')], snapshot, 'Default', [gif], []);
 		assert.equal(outcome.added, 1);
 		assert.match(storeRequests()[0].filename, /^auto-anki-[0-9a-f]{16}-motion\.gif$/);
 		assert.equal(storeRequests()[0].data, 'R0lG');
@@ -119,7 +119,7 @@ describe('exporting images', () => {
 		const b = diagram('Notes/b.png', [2]);
 		const failing = await ankiMediaName(a);
 		const { server, snapshot } = await setup({ storeMedia: filename => filename === failing ? { result: null, error: 'disk full' } : { result: filename, error: null } });
-		const outcome = await addNotesToAnki([note('{{image:Notes/a.png}}', 'first'), note('{{image:Notes/b.png}}', 'second')], snapshot, 'Default', [a, b]);
+		const outcome = await addNotesToAnki([note('{{image:Notes/a.png}}', 'first'), note('{{image:Notes/b.png}}', 'second')], snapshot, 'Default', [a, b], []);
 		assert.equal(outcome.added, 1);
 		assert.deepEqual(server.added.map(added => added.fields.Term), ['second']);
 		assert.deepEqual(outcome.remaining.map(item => item.fields.Term), ['first']);
@@ -129,7 +129,7 @@ describe('exporting images', () => {
 	test('a placeholder for a diagram that was not sent stops the export before Anki is called', async () => {
 		const { snapshot } = await setup();
 		const before = fake.ankiRequests.length;
-		await assert.rejects(addNotesToAnki([note('{{image:missing.png}}')], snapshot, 'Default', [diagram('Notes/a.png')]), /invalid fields/);
+		await assert.rejects(addNotesToAnki([note('{{image:missing.png}}')], snapshot, 'Default', [diagram('Notes/a.png')], []), /invalid fields/);
 		assert.equal(fake.ankiRequests.length, before);
 	});
 });
