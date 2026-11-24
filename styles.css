@@ -279,6 +279,48 @@ If your plugin does not need CSS, delete this file.
     margin-bottom: var(--size-4-3);
 }
 
+.auto-anki-deck-preview-result {
+    margin-block-start: var(--size-4-4);
+}
+
+.auto-anki-picker .deck-option {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    overflow-wrap: anywhere;
+}
+
+.auto-anki-deck-badge {
+    flex: none;
+    margin-inline-start: auto;
+    padding: 0 var(--size-4-2);
+    border: 1px solid currentColor;
+    border-radius: 1em;
+    font-size: var(--font-ui-smaller);
+}
+
+.auto-anki-deck-picker .modal-content {
+    overflow-y: auto;
+}
+
+.auto-anki-deck-picker .modal-content > :not(.deck-options-container) {
+    flex-shrink: 0;
+}
+
+.auto-anki-deck-picker .modal-content > .deck-options-container {
+    min-height: 3rem;
+}
+
+.auto-anki-deck-status {
+    margin-block: var(--size-4-2);
+    overflow-wrap: anywhere;
+}
+
+.auto-anki-deck-status,
+.auto-anki-deck-status code {
+    white-space: normal;
+}
+
 .auto-anki-picker .question-options-container,
 .auto-anki-picker .deck-options-container {
     min-height: 0;

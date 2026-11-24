@@ -1,20 +1,26 @@
 import type { SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import type AutoAnkiPlugin from '../../main';
 import { verifyNoteType } from '../../anki/note-types';
-import { DefaultDeckModal } from '../decks/default-deck-modal';
 import { ankiUrl, DEFAULT_ANKI_URL } from '../../settings/schema';
 import { TagSettingsPage } from './tags';
+import { DeckSettingsPage, DECK_TEMPLATE_KEY, SORT_DECKS_KEY } from './decks';
 
 /** Anki owns the definitions. Settings only choose which existing types may be generated. */
 export class AnkiSettings {
 	private opened = false;
 	private readonly tags: TagSettingsPage;
-	constructor(private readonly plugin: AutoAnkiPlugin) { this.tags = new TagSettingsPage(plugin); }
-	hide(): void { this.opened = false; this.tags.hide(); }
+	private readonly decks: DeckSettingsPage;
+	constructor(private readonly plugin: AutoAnkiPlugin) {
+		this.tags = new TagSettingsPage(plugin);
+		this.decks = new DeckSettingsPage(plugin);
+	}
+	hide(): void { this.opened = false; this.tags.hide(); this.decks.hide(); }
 	owns(key: string): boolean { return key.startsWith('anki.'); }
 
 	getValue(key: string): unknown {
 		if (this.tags.owns(key)) return this.tags.getValue(key);
+		if (key === DECK_TEMPLATE_KEY) return this.plugin.settings.anki.deckTemplate;
+		if (key === SORT_DECKS_KEY) return this.plugin.settings.anki.sortDecksByMatch;
 		if (key === 'anki.url') return this.plugin.settings.anki.url;
 		return this.plugin.settings.anki.enabledNoteTypes.includes(this.nameFromKey(key));
 	}
@@ -23,6 +29,8 @@ export class AnkiSettings {
 
 	async setValue(key: string, value: unknown): Promise<void> {
 		if (this.tags.owns(key)) await this.tags.setValue(key, value);
+		else if (key === DECK_TEMPLATE_KEY && typeof value === 'string') await this.decks.setTemplate(value);
+		else if (key === SORT_DECKS_KEY && typeof value === 'boolean') await this.plugin.updateSettings(settings => { settings.anki.sortDecksByMatch = value; }, false);
 		else if (key === 'anki.url') {
 			if (typeof value === 'string' && ankiUrl(value, '') === value.trim()) {
 				await this.plugin.updateSettings(settings => { settings.anki.url = value.trim(); }, false);
@@ -42,11 +50,7 @@ export class AnkiSettings {
 		return [
 			{ name: 'AnkiConnect address', desc: `Anki must be running with AnkiConnect enabled. Default: ${DEFAULT_ANKI_URL}. Refresh note types after changing it.`,
 				control: { type: 'text', key: 'anki.url', disabled: () => !this.plugin.settingsStore.canSave } },
-			{ name: 'Default deck', desc: `New notes start in this deck in the export dialog. Current: ${anki.defaultDeck}. Anki's Default deck is used if it is missing.`,
-				render: setting => { setting.addButton(button => button.setButtonText('Choose deck…').setDisabled(!this.plugin.settingsStore.canSave)
-					.onClick(() => new DefaultDeckModal(this.plugin.app, anki.url, this.plugin.settings.anki.defaultDeck, async deck => {
-						await this.plugin.updateSettings(settings => { settings.anki.defaultDeck = deck; });
-					}).open())); } },
+			this.decks.page(),
 			this.tags.page(),
 			{ type: 'group', heading: 'Note types',
 				search: { placeholder: 'Search note types', match: (definition, query) => {

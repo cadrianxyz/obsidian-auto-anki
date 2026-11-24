@@ -35,3 +35,39 @@ export function filterDecks(decks: readonly string[], query: string): string[] {
 export function pinDeck(decks: readonly string[], deck: string): string[] {
 	return decks.includes(deck) ? [deck, ...decks.filter(other => other !== deck)] : [...decks];
 }
+
+// --- Matching ---
+
+export function findDeck(decks: readonly string[], name: string): string | undefined {
+	return decks.find(deck => deck === name) ?? decks.find(deck => deck.toLowerCase() === name.toLowerCase());
+}
+
+// --- Explicit deck creation ---
+
+export async function createAnkiDeck(client: AnkiClient, deck: string): Promise<string> {
+	try {
+		const id = await client.invoke('createDeck', { deck });
+		if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) throw new Error('Anki returned an unreadable deck ID.');
+		const actual = findDeck(await getAnkiDecks(client.url), deck);
+		if (!actual) throw new Error('Anki did not return a deck with that name.');
+		return actual;
+	}
+	catch (error) {
+		throw new Error(`Could not create or verify “${deck}”: ${error instanceof Error ? error.message : 'Unknown error.'}`);
+	}
+}
+
+// --- Word ranking ---
+
+export function rankDecks(decks: readonly string[], text: string, suggested = ''): string[] {
+	const words = (value: string): Set<string> => new Set(value.normalize('NFC').toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []);
+	const textWords = words(text);
+	const templateWords = words(suggested);
+	const exact = suggested && findDeck(decks, suggested);
+	return decks.map(deck => {
+		const nameWords = [...words(deck)];
+		return { deck, exact: Number(deck === exact), templateScore: nameWords.filter(word => templateWords.has(word)).length,
+			textScore: nameWords.filter(word => textWords.has(word)).length };
+	}).sort((first, second) => second.exact - first.exact || second.templateScore - first.templateScore || second.textScore - first.textScore)
+		.map(({ deck }) => deck);
+}

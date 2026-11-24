@@ -81,6 +81,8 @@ export interface PluginSettings {
 		enabledNoteTypes: string[];
 		/** Existing Anki deck that starts selected in the export dialog. If Anki no longer has it, Anki's Default deck is used. */
 		defaultDeck: string;
+		deckTemplate: string;
+		sortDecksByMatch: boolean;
 		/** Tags added to new Anki notes. Off by default, so nothing is tagged until the user asks. */
 		tags: TagSettings;
 	};
@@ -109,6 +111,8 @@ export function createDefaultSettings(): PluginSettings {
 			url: DEFAULT_ANKI_URL,
 			enabledNoteTypes: ['Basic', 'Cloze'],
 			defaultDeck: 'Default',
+			deckTemplate: '',
+			sortDecksByMatch: false,
 			tags: { enabled: false, model: true, reasoningEffort: false, promptVersion: false, prefix: true, extra: '' },
 		},
 	};
@@ -200,6 +204,8 @@ export function normalizeSettings(value: unknown): PluginSettings {
 		settings.anki.enabledNoteTypes = [...new Set(anki.enabledNoteTypes.filter((name): name is string => typeof name === 'string' && !!name.trim()))];
 	}
 	settings.anki.defaultDeck = asNonEmptyString(anki.defaultDeck) ?? settings.anki.defaultDeck;
+	settings.anki.deckTemplate = asString(anki.deckTemplate, '');
+	settings.anki.sortDecksByMatch = asBoolean(anki.sortDecksByMatch, settings.anki.sortDecksByMatch);
 	const tags = asRecord(anki.tags);
 	for (const option of ['enabled', 'model', 'reasoningEffort', 'promptVersion', 'prefix'] as const) {
 		settings.anki.tags[option] = asBoolean(tags[option], settings.anki.tags[option]);

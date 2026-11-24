@@ -9,7 +9,8 @@ import type { GeneratedAnkiNote, GenerationResult } from '../generate/result';
 import type { Diagram } from '../source-note/images';
 import { cleanNote, embeddedFiles, type SourceNote } from '../source-note/content';
 import { prepareDiagrams, resolveImageInputPolicy, type ImageInputPolicy, type PreparedDiagrams } from '../source-note/images';
-import { chooseDeck, getAnkiDecks, pinDeck } from '../anki/decks';
+import { chooseDeck, findDeck, getAnkiDecks, pinDeck, rankDecks } from '../anki/decks';
+import type { DeckTemplateResult } from '../anki/deck-template';
 import { addNotesToAnki } from '../anki/export';
 import type { GenerationStatus } from './generation-status';
 import { renderDeckPicker } from './decks/deck-picker';
@@ -87,7 +88,7 @@ export class ExportModal extends Modal {
 		private selectedModel: ExportModel,
 		private readonly models: readonly ExportModel[],
 		private readonly address: string,
-		private readonly defaultDeck: string,
+		private readonly deck: ExportDeck,
 		private readonly preferences: PluginSettings['notes'],
 		private readonly tags: TagSettings,
 		/** True when only selected text is sent. Not named `selection`, which Obsidian's Modal uses for its own state. */
@@ -277,7 +278,7 @@ export class ExportModal extends Modal {
 			if (this.closed) return;
 			this.generationStatus.setState('idle');
 			this.close();
-			new ChoiceModal(this.app, new NoteSelection(result.notes), this.address, this.defaultDeck, result, destinations, tags).open();
+			new ChoiceModal(this.app, new NoteSelection(result.notes), this.address, this.deck, result, destinations, tags).open();
 		}
 		catch (error) {
 			if (!this.closed) { this.generationStatus.setState('error'); new Notice(error instanceof Error ? error.message : 'Anki note generation failed.', 0); }
@@ -302,6 +303,14 @@ export class ExportModal extends Modal {
 
 // --- Review and deck choice ---
 
+interface ExportDeck {
+	defaultDeck: string;
+	template: DeckTemplateResult;
+	text: string;
+	sortByMatch: boolean;
+	selection?: { name: string; create: boolean };
+}
+
 /** The generated notes and which ones are chosen. Both review steps share it, so going back keeps every note. */
 class NoteSelection {
 	readonly chosen = new Set<GeneratedAnkiNote>();
@@ -321,7 +330,7 @@ class NoteSelection {
 
 /** Lets the user pick which generated notes to export. Only the list scrolls; the buttons stay in view. */
 export class ChoiceModal extends Modal {
-	constructor(app: App, private readonly review: NoteSelection, private readonly address: string, private readonly deck: string,
+	constructor(app: App, private readonly review: NoteSelection, private readonly address: string, private readonly deck: ExportDeck,
 		private readonly feedback: RunFeedback, private readonly destinations: AnkiDestinations, private readonly tags: ExportTags) {
 		super(app);
 	}
@@ -387,15 +396,17 @@ export class AnkiDeckModal extends Modal {
 	private query = '';
 	/** The deck this dialog started with, when Anki no longer has it. */
 	private replacedDeck = '';
+	private missingDeck?: string;
 	private exporting = false;
 	private deckError?: string;
 	private readonly buttons: ButtonComponent[] = [];
+	private confirm?: ButtonComponent;
 	private tagBox?: TextComponent;
 
 	constructor(
 		app: App,
 		private readonly address: string,
-		private selectedDeck: string,
+		private readonly deck: ExportDeck,
 		private readonly review: NoteSelection,
 		private readonly destinations: AnkiDestinations,
 		private readonly feedback: RunFeedback,
@@ -406,6 +417,9 @@ export class AnkiDeckModal extends Modal {
 
 	private async fetchData(): Promise<void> {
 		this.deckError = undefined;
+		this.replacedDeck = '';
+		this.missingDeck = undefined;
+		this.decks = [];
 		let decks: string[] = [];
 		try { decks = await getAnkiDecks(this.address); }
 		catch (error) {
@@ -413,12 +427,19 @@ export class AnkiDeckModal extends Modal {
 			new Notice(this.deckError);
 		}
 		this.loaded = true;
-		if (!decks.length) { this.decks = []; return; }
-
-		const requested = this.selectedDeck;
-		const choice = chooseDeck(decks, requested);
-		this.selectedDeck = choice.deck;
-		this.replacedDeck = choice.replaced ? requested : '';
+		if (this.deckError) return;
+		const suggested = this.deck.template.deck;
+		const existing = suggested && findDeck(decks, suggested);
+		if (suggested && !existing) this.missingDeck = suggested;
+		const prior = this.deck.selection;
+		if (prior?.create && prior.name === this.missingDeck) {
+			this.decks = decks;
+			return;
+		}
+		const requested = prior?.name ?? (existing || this.deck.defaultDeck);
+		const choice = chooseDeck(decks, findDeck(decks, requested) ?? requested);
+		this.deck.selection = choice.deck ? { name: choice.deck, create: false } : undefined;
+		this.replacedDeck = choice.replaced && choice.deck ? requested : '';
 		// The starting deck stays first for as long as this dialog is open, even after another deck is chosen.
 		this.decks = pinDeck(decks, choice.deck);
 	}
@@ -433,23 +454,40 @@ export class AnkiDeckModal extends Modal {
 		if (!this.loaded) {
 			contentEl.createEl('p', { cls: 'setting-item-description', text: 'Loading decks from Anki…' });
 		}
-		else if (!this.decks.length) {
+		else if (!this.decks.length && !this.missingDeck) {
 			const notice = contentEl.createDiv({ cls: 'error-notice' });
 			notice.createEl('h4', { text: this.deckError ?? 'Your Anki collection has no decks. Create one in Anki first.' });
 			notice.createEl('button', { text: 'Refresh' }).onclick = () => { void this.load(); };
 		}
 		else {
-			contentEl.createEl('p', { text: 'Pick one of the following available Anki decks to export to.' });
+			contentEl.createEl('p', { text: 'Choose a deck to export to.' });
+			if (this.deck.template.error) contentEl.createEl('p', { cls: 'setting-item-description', text: this.deck.template.error });
 			if (this.replacedDeck) {
-				contentEl.createEl('p', { cls: 'setting-item-description', text: `“${this.replacedDeck}” is not in Anki, so “${this.selectedDeck}” is selected.` });
+				contentEl.createEl('p', { cls: 'setting-item-description', text: `“${this.replacedDeck}” is not in Anki, so “${this.deck.selection?.name}” is selected.` });
 			}
-			renderDeckPicker(contentEl, this.decks, {
-				selected: this.selectedDeck,
+			const decks = this.deck.sortByMatch ? rankDecks(this.decks, this.deck.text, this.deck.template.deck ?? this.deck.defaultDeck) : this.decks;
+			renderDeckPicker(contentEl, decks, {
+				selected: this.deck.selection?.name ?? '',
 				query: this.query,
+				create: this.missingDeck,
+				defaultDeck: findDeck(this.decks, this.deck.defaultDeck),
+				locked: () => this.exporting,
 				onQuery: query => { this.query = query; },
-				onSelect: deck => { if (!this.exporting) this.selectedDeck = deck; },
+				onSelect: name => {
+					this.deck.selection = { name, create: name === this.missingDeck };
+					this.updateButtons();
+				},
 			});
 			this.renderTags(contentEl);
+			const target = this.deck.template.deck;
+			if (this.deck.sortByMatch || target) {
+				const status = contentEl.createDiv({ cls: 'setting-item-description auto-anki-deck-status' });
+				if (this.deck.sortByMatch) status.createSpan({ text: 'Decks sorted automatically.' });
+				if (target) {
+					status.createSpan({ text: this.deck.sortByMatch ? ' Template target: ' : 'Template target: ' });
+					status.createEl('code', { text: target });
+				}
+			}
 		}
 
 		const footer = new Setting(contentEl).addButton(button => {
@@ -457,11 +495,12 @@ export class AnkiDeckModal extends Modal {
 			button.setButtonText('Back to selection').onClick(() => {
 				if (this.exporting) return;
 				this.close();
-				new ChoiceModal(this.app, this.review, this.address, this.selectedDeck, this.feedback, this.destinations, this.tags).open();
+				new ChoiceModal(this.app, this.review, this.address, this.deck, this.feedback, this.destinations, this.tags).open();
 			});
 		});
-		if (this.decks.length) footer.addButton(button => {
-			this.buttons.push(button);
+		this.confirm = undefined;
+		if (this.decks.length || this.missingDeck) footer.addButton(button => {
+			this.confirm = button;
 			button.setButtonText('Confirm and export').setCta().onClick(() => this.exportSelection());
 		});
 		this.updateButtons();
@@ -490,6 +529,8 @@ export class AnkiDeckModal extends Modal {
 
 	private updateButtons(): void {
 		for (const button of this.buttons) button.setDisabled(this.exporting);
+		this.confirm?.setButtonText(this.deck.selection?.create ? 'Create deck and export' : 'Confirm and export')
+			.setDisabled(this.exporting || !this.deck.selection);
 		this.tagBox?.setDisabled(this.exporting);
 	}
 
@@ -502,12 +543,13 @@ export class AnkiDeckModal extends Modal {
 
 	private async exportSelection(): Promise<void> {
 		const notes = this.review.selectedNotes();
-		if (!this.selectedDeck || !notes.length || this.exporting) return;
+		const selection = this.deck.selection;
+		if (!selection || !notes.length || this.exporting) return;
 		this.exporting = true;
 		this.updateButtons();
 		try {
 			if (this.address !== this.destinations.url) throw new Error('The Anki address does not match this generation. Return to review.');
-			const outcome = await addNotesToAnki(notes, this.destinations, this.selectedDeck, this.feedback.diagrams, noteTags(this.tags.settings, this.tags.run, this.tags.extra));
+			const outcome = await addNotesToAnki(notes, this.destinations, selection.name, this.feedback.diagrams, noteTags(this.tags.settings, this.tags.run, this.tags.extra), selection.create);
 			this.review.removeAdded(outcome.remaining);
 			if (!outcome.errors.length) new Notice(`Successfully exported ${outcome.added} note(s) to Anki!`);
 			else {
@@ -515,6 +557,7 @@ export class AnkiDeckModal extends Modal {
 				new Notice(`Exported ${outcome.added} of ${notes.length} note(s) to Anki. Anki refused ${outcome.errors.length}:\n${reasons}`, 0);
 			}
 			if (!outcome.remaining.length) this.close();
+			else if (selection.create) await this.load();
 		}
 		catch (error) {
 			new Notice(`ERR: Anki refused the export: ${error instanceof Error ? error.message : 'The destinations could not be verified.'}`, 0);
@@ -526,7 +569,7 @@ export class AnkiDeckModal extends Modal {
 	}
 
 	async onOpen(): Promise<void> {
-		this.modalEl.classList.add('auto-anki-picker');
+		this.modalEl.classList.add('auto-anki-picker', 'auto-anki-deck-picker');
 		await this.load();
 	}
 
