@@ -6,12 +6,65 @@ import { BASIC_NOTE_TYPE, CLOZE_NOTE_TYPE, ankiServer, loadPlugin, makeDevice, m
 beforeEach(resetAll);
 const control = (tab, name) => settingsIn(tab.containerEl).find(row => row.name === name)?.components[0];
 const description = (tab, name) => settingsIn(tab.containerEl).find(row => row.name === name).desc;
+const previewLines = tab => settingsIn(tab.containerEl).find(row => row.name === 'Deck template preview').descEl.children.map(line => line.textContent);
 const custom = { id: 300, fields: ['Expression', 'Meaning', 'Example'], descriptions: ['Term', 'Definition', 'Usage'], templates: { Recall: { Front: '{{Expression}}', Back: '{{Meaning}} {{#Example}}{{Example}}{{/Example}}' } } };
 async function setup(value = createDefaultSettings()) {
  const server = ankiServer({ noteTypes: { Basic: BASIC_NOTE_TYPE, Cloze: CLOZE_NOTE_TYPE, 'Custom.with dots': custom } });
  const disk = makeDisk(value); const plugin = await loadPlugin(makeDevice({ disk })); const tab = openSettings(plugin);
  tab.openPage('Anki'); await plugin.refreshAnkiTypes(); return { plugin, tab, server, disk };
 }
+describe('Deck Selection settings', () => {
+ test('preserves the saved default deck and tags when upgrading from 1.1', async () => {
+  const settings = createDefaultSettings();
+  delete settings.anki.deckTemplate;
+  settings.anki.defaultDeck = 'Biology';
+  settings.anki.tags.extra = 'existing-tag';
+  const { tab, disk } = await setup(settings);
+  assert.equal(control(tab, 'Default deck'), undefined);
+  tab.openPage('Anki', 'Deck Selection');
+  assert.match(description(tab, 'Default deck'), /Biology/);
+  assert.equal(control(tab, 'Deck template').value, '');
+  await control(tab, 'Deck template').type('{{vault}}::{{folder}}');
+  assert.deepEqual(previewLines(tab), ['Example using the current note “Notes/Example.md”', 'Suggested deck: Study::Notes']);
+  assert.equal(readDataJson(disk).anki.deckTemplate, '{{vault}}::{{folder}}');
+  assert.equal(readDataJson(disk).anki.tags.extra, 'existing-tag');
+  assert.equal(readDataJson(disk).anki.defaultDeck, 'Biology');
+ });
+ test('keeps invalid input editable and clears the preview error when corrected', async () => {
+  const { tab, disk } = await setup();
+  tab.openPage('Anki', 'Deck Selection');
+  const template = control(tab, 'Deck template');
+  await template.type('{{author}}');
+  assert.match(tab.containerEl.textContent, /Unknown deck template placeholder: \{\{author\}\}/);
+  assert.equal(readDataJson(disk).anki.deckTemplate, '{{author}}');
+  await template.type('{{folder}}');
+  assert.deepEqual(previewLines(tab), ['Example using the current note “Notes/Example.md”', 'Suggested deck: Notes']);
+  assert.doesNotMatch(tab.containerEl.textContent, /Unknown deck template placeholder/);
+ });
+ test('labels the sample note used when no note is open', async () => {
+  const plugin = await loadPlugin(makeDevice({ activeNote: null }));
+  const tab = openSettings(plugin);
+  tab.openPage('Anki', 'Deck Selection');
+  await control(tab, 'Deck template').type('{{folder}}');
+  assert.deepEqual(previewLines(tab), [
+   'Example using the sample note “Computer Science/Operating Systems/Scheduling.md”',
+   'Suggested deck: Computer Science::Operating Systems',
+  ]);
+ });
+ test('name matching is off by default and the setting saves both choices', async () => {
+  const { tab, disk } = await setup();
+  tab.openPage('Anki', 'Deck Selection');
+  const sort = control(tab, 'Sort by name match');
+  assert.equal(sort.value, false);
+  await sort.type(true);
+  assert.equal(readDataJson(disk).anki.sortDecksByMatch, true);
+  const restarted = await loadPlugin(makeDevice({ disk }));
+  assert.equal(restarted.settings.anki.sortDecksByMatch, true);
+  await sort.type(false);
+  assert.equal(readDataJson(disk).anki.sortDecksByMatch, false);
+ });
+});
+
 describe('Anki note-type checkboxes', () => {
  test('lists all types and their descriptions without mappings or AI requests', async () => {
   const { tab } = await setup();

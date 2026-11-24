@@ -23,8 +23,8 @@ const SELECTION = 'export-text-selection-to-anki';
 
 beforeEach(resetAll);
 
-async function device({ settings, keychain = makeKeychain('ok', { [SECRET_ID]: KEY }), activeNote, attachments } = {}) {
-	return loadPlugin(makeDevice({ disk: makeDisk(settings ?? { openAiModel: 'gpt-6-luna' }), keychain, activeNote, attachments }));
+async function device({ settings, keychain = makeKeychain('ok', { [SECRET_ID]: KEY }), activeNote, attachments, notePath } = {}) {
+	return loadPlugin(makeDevice({ disk: makeDisk(settings ?? { openAiModel: 'gpt-6-luna' }), keychain, activeNote, attachments, notePath }));
 }
 
 function button(modal, text) {
@@ -821,6 +821,140 @@ describe('what the user is told when something goes wrong', () => {
 		await decks.opened;
 		assert.match(fake.notices.join('\n'), /Could not connect to Anki/);
 		assert.ok(buttonsIn(decks.contentEl).some((b) => b.text === 'Refresh'), 'no way to retry');
+	});
+});
+
+describe('template decks and local matching', () => {
+	const path = 'Computer Science/Operating Systems/Scheduling.md';
+	const target = 'Computer Science::Operating Systems';
+	async function picker({ template = '{{folder}}', selection, sortByMatch = false, defaultDeck = 'Default' } = {}) {
+		openai.handler = () => openAiReply(NOTES);
+		const plugin = await device({ notePath: path, activeNote: 'Computer Science, operating systems, scheduling and processes.' });
+		await plugin.updateSettings(settings => {
+			settings.anki.deckTemplate = template;
+			settings.anki.defaultDeck = defaultDeck;
+			settings.anki.sortDecksByMatch = sortByMatch;
+		});
+		run(plugin, selection ? SELECTION : FILE, selection);
+		const ask = lastModal();
+		await ask.opened;
+		await button(ask, 'Generate Anki notes').click();
+		const review = lastModal();
+		await button(review, 'Select all').click();
+		await button(review, 'Confirm selection').click();
+		const decks = lastModal();
+		await decks.opened;
+		return decks;
+	}
+	const selected = modal => deckItems(modal).find(item => item.className.includes('--selected'))?.children[0].text;
+	const action = (modal, text) => modal.contentEl.all().find(el => el.tagName === 'button' && el.text === text);
+	const status = modal => modal.contentEl.all().find(el => el.className.includes('auto-anki-deck-status'))?.textContent;
+
+	test('marks the configured default and missing target independently of selection', async () => {
+		ankiServer({ decks: ['Default', 'Biology'] });
+		const modal = await picker({ defaultDeck: 'Biology', sortByMatch: true });
+		action(modal, `Create new deck: ${target}`).click();
+		assert.deepEqual(deckItems(modal).map(item => item.children.map(child => child.text)), [
+			[`Create new deck: ${target}`, 'Missing'], ['Biology', 'Default'], ['Default'],
+		]);
+		assert.equal(status(modal), `Decks sorted automatically. Template target: ${target}`);
+	});
+
+	test('warns about an invalid template and exports to the saved default without creating a deck', async () => {
+		const anki = ankiServer();
+		const modal = await picker({ template: '{{author}}' });
+		assert.match(modal.contentEl.textContent, /Unknown deck template placeholder: \{\{author\}\}/);
+		assert.equal(selected(modal), 'Default');
+		assert.doesNotMatch(modal.contentEl.textContent, /Create new deck:/);
+		await button(modal, 'Confirm and export').click();
+		assert.ok(!ankiActionsSent().includes('createDeck'));
+		assert.deepEqual(anki.added.map(note => note.deckName), NOTES.map(() => 'Default'));
+	});
+
+	test('preselects the full existing nested deck for a selection, using Anki spelling', async () => {
+		const canonical = 'Computer Science::OPERATING SYSTEMS';
+		const anki = ankiServer({ decks: ['Default', 'Computer Science', canonical] });
+		const modal = await picker({ selection: 'Process scheduling' });
+		assert.equal(selected(modal), canonical);
+		assert.equal(status(modal), `Template target: ${target}`);
+		assert.equal(action(modal, `Create new deck: ${target}`), undefined);
+		await button(modal, 'Confirm and export').click();
+		assert.equal(anki.added[0].deckName, canonical);
+		assert.ok(!ankiActionsSent().includes('createDeck'));
+	});
+
+	test('offers creation when only the parent exists, and creates the full name only on confirmation', async () => {
+		const anki = ankiServer({ decks: ['Default', 'Computer Science'] });
+		const modal = await picker();
+		assert.equal(selected(modal), 'Default');
+		action(modal, `Create new deck: ${target}`).click();
+		assert.ok(!ankiActionsSent().includes('createDeck'));
+		await button(modal, 'Create deck and export').click();
+		assert.deepEqual(fake.ankiRequests.filter(({ body }) => body.action === 'createDeck').map(({ body }) => body.params.deck), [target]);
+		assert.equal(anki.added.length, NOTES.length);
+		assert.ok(anki.added.every(note => note.deckName === target));
+	});
+
+	test('canceling a staged creation makes no changes', async () => {
+		const anki = ankiServer();
+		const modal = await picker();
+		action(modal, `Create new deck: ${target}`).click();
+		modal.close();
+		assert.ok(!ankiActionsSent().includes('createDeck'));
+		assert.equal(anki.added.length, 0);
+	});
+
+	test('choosing an existing deck clears staged creation', async () => {
+		const anki = ankiServer();
+		const modal = await picker();
+		action(modal, `Create new deck: ${target}`).click();
+		deckItems(modal).find(item => item.children[0].text === 'Biology').click();
+		await button(modal, 'Confirm and export').click();
+		assert.ok(!ankiActionsSent().includes('createDeck'));
+		assert.equal(anki.added[0].deckName, 'Biology');
+	});
+
+	test('failed creation keeps the picker open and adds no notes', async () => {
+		const anki = ankiServer();
+		const handler = fake.ankiHandler;
+		fake.ankiHandler = body => body.action === 'createDeck' ? { json: { result: null, error: 'Creation refused' } } : handler(body);
+		const modal = await picker();
+		action(modal, `Create new deck: ${target}`).click();
+		await button(modal, 'Create deck and export').click();
+		assert.ok(modal.isOpen);
+		assert.equal(anki.added.length, 0);
+		assert.ok(!ankiActionsSent().includes('canAddNotes'));
+		assert.match(fake.notices.at(-1), /Creation refused/);
+	});
+
+	test('sorting uses selected text rather than other words in the file, without selecting a deck', async () => {
+		ankiServer({ decks: ['Default', 'Computer Science', 'Plant::Biology', 'Plant'] });
+		const modal = await picker({ template: '', selection: 'Plant biology and reproduction', sortByMatch: true });
+		assert.deepEqual(deckItems(modal).map(item => item.children[0].text), ['Default', 'Plant::Biology', 'Plant', 'Computer Science']);
+		assert.equal(selected(modal), 'Default');
+	});
+
+	test('prioritizes the expanded folder template over highlighted text, even for a stronger text match', async () => {
+		ankiServer({ decks: ['Plant Biology', 'Science', 'Science::Plant', `${target}::Plant`, target] });
+		const modal = await picker({ selection: 'plant biology', sortByMatch: true });
+		assert.deepEqual(deckItems(modal).map(item => item.children[0].text), [target, `${target}::Plant`, 'Science::Plant', 'Science', 'Plant Biology']);
+	});
+
+	test('the saved sorting preference ranks decks when the picker opens without changing the selection', async () => {
+		ankiServer({ decks: ['Default', 'Plant::Biology', 'Computer Science'] });
+		const modal = await picker({ template: '', sortByMatch: true });
+		assert.equal(status(modal), 'Decks sorted automatically.');
+		assert.deepEqual(deckItems(modal).map(item => item.children[0].text), ['Default', 'Computer Science', 'Plant::Biology']);
+		assert.equal(selected(modal), 'Default');
+		assert.equal(action(modal, 'Sort by match'), undefined);
+	});
+
+	test('leaves decks in the usual order when matching is off', async () => {
+		ankiServer({ decks: ['Default', 'Plant::Biology', 'Computer Science'] });
+		const modal = await picker({ template: '' });
+		assert.equal(status(modal), undefined);
+		assert.deepEqual(deckItems(modal).map(item => item.children[0].text), ['Default', 'Plant::Biology', 'Computer Science']);
+		assert.equal(action(modal, 'Sort by match'), undefined);
 	});
 });
 
