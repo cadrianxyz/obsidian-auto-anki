@@ -748,13 +748,34 @@ describe('native provider and model settings', () => {
 		assert.equal(Object.keys(control(tab, 'Default model').options).length, 3, 'only the newly enabled model enters the picker');
 	});
 
+	test('a rejected key takes priority over a metadata failure until a successful retry', async () => {
+		const success = fake.providerHandler;
+		fake.providerHandler = (_, request) => request.url === MODEL_CATALOG_URL
+			? { status: 503, json: {} } : { status: 401, json: { error: { message: KEY } } };
+		const plugin = await loadPlugin(makeDevice({ disk: makeDisk(configured()), keychain: makeKeychain('ok', { [SECRET_ID]: KEY }) }));
+		const tab = openSettings(plugin);
+		await flush();
+		const provider = () => tab.settingItems[1].items[0];
+		assert.equal(provider().displayValue(), 'API Key rejected');
+		assert.equal(provider().status(), 'warning');
+		tab.openPage('OpenAI');
+		const modal = await manageScreen(tab);
+		assert.match(modal.statusEl.textContent, /401.*503/);
+		assert.ok(!modal.statusEl.textContent.includes(KEY));
+		fake.providerHandler = success;
+		await modalRefresh(modal).click();
+		await flush();
+		assert.equal(provider().displayValue(), 'API key saved');
+		assert.equal(provider().status(), null);
+	});
+
 	test('a metadata failure leaves enabled choices alone and does not block adding provider-reported models', async () => {
 		fake.providerHandler = (_, request) => request.url === MODEL_CATALOG_URL
 			? { status: 503, json: {} } : { json: { data: [{ id: 'future-model' }] } };
 		const plugin = await loadPlugin(makeDevice({ disk: makeDisk(configured()), keychain: makeKeychain('ok', { [SECRET_ID]: KEY }) }));
 		const tab = openSettings(plugin);
 		await flush();
-		assert.equal(tab.settingItems[1].items[0].displayValue(), 'Model information not refreshed');
+		assert.equal(tab.settingItems[1].items[0].displayValue(), 'Model metadata unavailable');
 		assert.equal(tab.settingItems[1].items[0].status(), 'warning');
 		assert.deepEqual(Object.keys(control(tab, 'Default model').options).filter(Boolean).map(value => JSON.parse(value).modelId), ['saved-model']);
 		tab.openPage('OpenAI');

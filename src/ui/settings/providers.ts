@@ -20,7 +20,7 @@ type ModelField = typeof MODEL_FIELDS[number];
 export class ProviderSettings {
 	private readonly openedProviders = new Set<ProviderId>();
 	private readonly refreshing = new Set<ProviderId>();
-	private readonly errors = new Map<ProviderId, string>();
+	private readonly errors = new Map<ProviderId, { summary: string; detail: string }>();
 	private readonly refreshVersions = new Map<ProviderId, number>();
 	private readonly refreshTasks = new Map<ProviderId, Promise<void>>();
 
@@ -43,7 +43,7 @@ export class ProviderSettings {
 			...PROVIDER_IDS.map(id => ({
 				type: 'page' as const, name: PROVIDER_NAMES[id],
 				displayValue: () => !getProviderApiKey(this.app, id) ? 'No key on this device'
-					: this.errors.has(id) ? 'Model information not refreshed' : 'API key saved',
+					: this.errors.get(id)?.summary ?? 'API key saved',
 				status: () => getProviderApiKey(this.app, id) && !this.errors.has(id) ? null : 'warning' as const,
 				items: this.providerSettings(id, modelsByProvider.get(id)!),
 			})),
@@ -146,7 +146,7 @@ export class ProviderSettings {
 					void this.refreshProvider(providerId);
 				}
 			} },
-			{ name: 'Model discovery', desc: this.errors.get(providerId) ?? 'Refreshing model information…',
+			{ name: 'Model discovery', desc: this.errors.get(providerId)?.detail ?? 'Refreshing model information…',
 				visible: () => hasKey() && (this.refreshing.has(providerId) || this.errors.has(providerId)) },
 			{ type: 'list', cls: 'auto-anki-provider-model-list', heading: 'Your models', emptyState: 'Use Manage models to enable models for your picker.',
 				visible: () => hasKey() || configured.length > 0,
@@ -157,7 +157,7 @@ export class ProviderSettings {
 				extraButtons: hasKey() || configured.length > 0 ? [
 					button => button.setIcon('settings-2').setTooltip('Manage models').setDisabled(editable()).onClick(() => {
 						new ManageModelsModal(this.app, this.plugin, providerId, () => this.refreshProvider(providerId, true),
-							() => this.errors.get(providerId), this.refreshTasks.get(providerId)).open();
+							() => this.errors.get(providerId)?.detail, this.refreshTasks.get(providerId)).open();
 					}),
 				] : [],
 				items: sortModelChoices(models.filter(model => configuredById.get(model.id)?.enabled),
@@ -228,8 +228,10 @@ export class ProviderSettings {
 				this.plugin.discovery.refreshProvider(providerId, apiKey),
 				this.plugin.discovery.refreshCatalog(force),
 			]);
-			const errors = results.filter(result => !result.ok).map(result => result.ok ? '' : result.error);
-			if (errors.length && this.refreshVersions.get(providerId) === version) this.errors.set(providerId, errors.join(' '));
+			const failures = results.filter(result => !result.ok);
+			if (failures[0] && this.refreshVersions.get(providerId) === version) {
+				this.errors.set(providerId, { summary: failures[0].summary, detail: failures.map(result => result.error).join(' ') });
+			}
 		}
 		finally {
 			if (this.refreshVersions.get(providerId) === version) {

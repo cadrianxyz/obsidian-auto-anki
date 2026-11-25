@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Deck Selection:** The default deck moves to **Settings → Auto Anki → Anki → Deck Selection**. Your saved deck and tags stay the same.
 - **Deck template:** Suggest a deck from the vault, full folder path, immediate parent folder, or note name. If the suggested deck is missing, you can explicitly create it when exporting.
 - **Sort by name match:** Turn this on in **Deck Selection** to rank existing decks by shared words from the note or selection, without sending text or downloading a model.
+- **Clearer provider errors:** **AI Providers** now says what went wrong, such as **API Key rejected**, instead of **Model information not refreshed**.
 
 ## [1.1.0] - 2026-11-23
 
