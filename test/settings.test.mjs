@@ -991,6 +991,70 @@ describe('settings UI discovery reuse', () => {
 		assert.ok(!('reported-effort' in rebuiltEffort.control.options));
 	});
 
+	test('Manage models keeps the same rows when toggling on or off', async () => {
+		const settings = configured('openai', 'z-default');
+		settings.providers.openai.models.push(createModelSettings('b-enabled'), { ...createModelSettings('a-hidden'), enabled: false });
+		const plugin = await loadPlugin(makeDevice({ disk: makeDisk(settings) }));
+		const modal = new ManageModelsModal(plugin.app, plugin, 'openai', async () => {}, () => undefined);
+		modal.open();
+		const rows = settingsIn(modal.listEl);
+		assert.deepEqual(rows.map(setting => setting.name), ['z-default', 'b-enabled', 'a-hidden']);
+		const save = modalButton(modal, 'Save changes');
+		assert.equal(save.disabled, true);
+		const hidden = modalRow(modal, 'a-hidden').components[0];
+		const defaultToggle = modalRow(modal, 'z-default').components[0];
+		assert.equal(hidden.getValue(), false);
+		assert.equal(defaultToggle.getValue(), true);
+		for (const [toggle, value, canSave, warnsAboutDefault] of [
+			[hidden, true, true, false],
+			[defaultToggle, false, true, true],
+			[defaultToggle, true, true, false],
+			[hidden, false, false, false],
+		]) {
+			await toggle.type(value);
+			const currentRows = settingsIn(modal.listEl);
+			assert.equal(currentRows.length, rows.length);
+			currentRows.forEach((setting, index) => assert.equal(setting, rows[index], 'toggling must not replace or move rows'));
+			assert.equal(toggle.getValue(), value, 'the existing toggle must reflect the new value');
+			assert.equal(save.disabled, !canSave);
+			assert.equal(modal.warningEl.textContent.includes('Disabling your default model'), warnsAboutDefault);
+		}
+	});
+
+	test('Manage models keeps the opening order through search, refresh and manual entry, then sorts on reopen', async () => {
+		const settings = configured('openai', 'z-default');
+		settings.providers.openai.models.push({ ...createModelSettings('m-hidden'), enabled: false });
+		const plugin = await loadPlugin(makeDevice({ disk: makeDisk(settings) }));
+		const getModels = plugin.discovery.getModels.bind(plugin.discovery);
+		let refreshed = false;
+		plugin.discovery.getModels = (...args) => {
+			const models = getModels(...args);
+			if (refreshed) models.unshift({ id: 'b-discovered', displayName: 'b-discovered', releaseDate: '2026-01-01' });
+			return models;
+		};
+		const openModal = () => {
+			const modal = new ManageModelsModal(plugin.app, plugin, 'openai', async () => { refreshed = true; }, () => undefined);
+			modal.open();
+			return modal;
+		};
+		const names = modal => settingsIn(modal.listEl).map(setting => setting.name);
+		const modal = openModal();
+		await modalRow(modal, 'm-hidden').components[0].type(true);
+		const search = modalRow(modal, 'Available models').components[0];
+		await search.type('hidden');
+		assert.deepEqual(names(modal), ['m-hidden']);
+		assert.equal(modalRow(modal, 'm-hidden').components[0].getValue(), true, 'search must preserve the staged toggle value');
+		await modalRefresh(modal).click();
+		await search.type('');
+		assert.deepEqual(names(modal), ['z-default', 'm-hidden', 'b-discovered']);
+		const manual = modalRow(modal, 'Model ID');
+		await manual.components[0].type('a-manual');
+		await manual.components[1].click();
+		assert.deepEqual(names(modal), ['z-default', 'm-hidden', 'b-discovered', 'a-manual']);
+		await modalButton(modal, 'Save changes').click();
+		assert.deepEqual(names(openModal()), ['z-default', 'a-manual', 'm-hidden', 'b-discovered']);
+	});
+
 	test('Manage models discovers once per render and preserves explicit deltas across concurrent edits', async () => {
 		const settings = configured();
 		settings.providers.openai.models.push({ ...createModelSettings('hidden'), enabled: false, maxOutputTokens: 6000 });

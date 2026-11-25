@@ -1,11 +1,13 @@
 import { Modal, Notice, Setting, type App, type ButtonComponent, type ExtraButtonComponent } from 'obsidian';
 import type AutoAnkiPlugin from '../../main';
 import { PROVIDER_NAMES, type ProviderId } from '../../ai/providers';
+import type { ProviderModelInfo } from '../../ai/models/metadata';
 import { isTextGenerationCandidate, sortModelChoices } from '../../ai/models/selection';
 
 /** Manage enabled models without changing saved preferences until Save changes. */
 export class ManageModelsModal extends Modal {
 	private readonly changes = new Map<string, boolean>();
+	private modelOrder?: Set<string>;
 	private query = '';
 	private busy = false;
 	private refreshing = false;
@@ -39,7 +41,7 @@ export class ManageModelsModal extends Modal {
 		});
 		this.statusEl = this.contentEl.createDiv({ cls: 'setting-item-description search-description', attr: { role: 'status' } });
 		this.warningEl = this.contentEl.createDiv({ cls: 'setting-item-description', attr: { role: 'status' } });
-				this.listEl = this.contentEl.createDiv({ cls: 'auto-anki-model-candidates' });
+		this.listEl = this.contentEl.createDiv({ cls: 'auto-anki-model-candidates' });
 
 		const advanced = this.contentEl.createEl('details', { cls: 'auto-anki-model-advanced' });
 		advanced.createEl('summary', { text: 'Advanced: enter a model ID' });
@@ -54,7 +56,7 @@ export class ManageModelsModal extends Modal {
 				const known = this.plugin.discovery.getModels(this.providerId, [], [id]).find(model => model.id === id)!;
 				if (!isTextGenerationCandidate(known)) { new Notice('This model is reported as unable to generate text. Choose a text model for Anki note generation.'); return; }
 				if (!this.enabledIds().has(id)) this.changes.set(id, true);
-								else this.changes.delete(id);
+				else this.changes.delete(id);
 				text.setValue('');
 				this.query = '';
 				this.searchInput.value = '';
@@ -68,16 +70,36 @@ export class ManageModelsModal extends Modal {
 			this.saveButton = button;
 			button.setCta().onClick(() => this.saveSelection());
 		});
+		this.refreshing = Boolean(this.ready);
 		this.renderChoices();
 		if (this.ready) {
-			this.refreshing = true;
-			this.renderChoices();
 			void this.ready.then(() => { this.refreshing = false; this.renderChoices(); });
 		}
 	}
 
+	// --- Model list ---
+
 	private enabledIds(): Set<string> {
 		return new Set(this.plugin.settings.providers[this.providerId].models.filter(model => model.enabled).map(model => model.id));
+	}
+
+	private orderModels(known: ProviderModelInfo[], enabled: ReadonlySet<string>): ProviderModelInfo[] {
+		if (!this.modelOrder) {
+			const defaultModel = this.plugin.settings.defaultModel;
+			const defaultId = defaultModel?.providerId === this.providerId && enabled.has(defaultModel.modelId)
+				? defaultModel.modelId : undefined;
+			const sorted = sortModelChoices(known, defaultId, enabled);
+			this.modelOrder = new Set(sorted.map(model => model.id));
+			return sorted;
+		}
+		const byId = new Map(known.map(model => [model.id, model]));
+		for (const id of byId.keys()) this.modelOrder.add(id);
+		const ordered: ProviderModelInfo[] = [];
+		for (const id of this.modelOrder) {
+			const model = byId.get(id);
+			if (model) ordered.push(model);
+		}
+		return ordered;
 	}
 
 	private renderChoices(): void {
@@ -85,16 +107,14 @@ export class ManageModelsModal extends Modal {
 		const added = new Set(configured.map(model => model.id));
 		const inPicker = this.enabledIds();
 		const known = this.plugin.discovery.getModels(this.providerId, configured, [...this.changes.keys()]);
-		const defaultModel = this.plugin.settings.defaultModel;
-		const sorted = sortModelChoices(known, defaultModel?.providerId === this.providerId ? defaultModel.modelId : undefined, added);
 		const query = this.query.trim().toLocaleLowerCase();
-		const matches = sorted.filter(model => `${model.displayName} ${model.id}`.toLocaleLowerCase().includes(query));
+		const matches = this.orderModels(known, inPicker).filter(model => `${model.displayName} ${model.id}`.toLocaleLowerCase().includes(query));
 		this.statusEl.setText(this.refreshing ? 'Refreshing model information…' : this.getError() ?? `${matches.length} of ${known.length} models. Models reported as unable to generate text cannot be selected for Anki note generation.`);
 		this.listEl.empty();
 		if (!matches.length) this.listEl.createEl('p', { text: query ? 'No matching models.' : 'No models found. Save an API key and refresh, or enter an exact ID under Advanced.' });
 		for (const model of matches) {
 			const textCandidate = isTextGenerationCandidate(model);
-						const enabled = this.changes.get(model.id) ?? inPicker.has(model.id);
+			const enabled = this.changes.get(model.id) ?? inPicker.has(model.id);
 			const details = [model.displayName !== model.id ? model.id : '',
 				!textCandidate ? 'Not a text-generation model' : !model.outputModalities?.length ? 'Capabilities not reported' : 'Text output',
 				model.releaseDate ? `Released ${model.releaseDate}` : '', inPicker.has(model.id) ? 'Already enabled' : added.has(model.id) ? 'Hidden; enabling restores its saved settings' : ''].filter(Boolean);
@@ -104,11 +124,14 @@ export class ManageModelsModal extends Modal {
 						if (this.busy || (value && !textCandidate)) return;
 						if (value === this.enabledIds().has(model.id)) this.changes.delete(model.id);
 						else this.changes.set(model.id, value);
-						this.renderChoices();
+						if (!textCandidate) toggle.setDisabled(!value);
+						this.updateButtons();
 					}));
 		}
 		this.updateButtons();
 	}
+
+	// --- Modal actions ---
 
 	private updateButtons(): void {
 		const defaultModel = this.plugin.settings.defaultModel;
