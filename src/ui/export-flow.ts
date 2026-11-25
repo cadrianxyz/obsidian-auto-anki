@@ -485,7 +485,7 @@ export class AnkiDeckModal extends Modal {
 				if (this.deck.sortByMatch) status.createSpan({ text: 'Decks sorted automatically.' });
 				if (target) {
 					status.createSpan({ text: this.deck.sortByMatch ? ' Template target: ' : 'Template target: ' });
-					status.createEl('code', { text: target });
+					status.createEl('code', { text: target, cls: 'auto-anki-inline-code' });
 				}
 			}
 		}
@@ -511,8 +511,8 @@ export class AnkiDeckModal extends Modal {
 		const { settings, run } = this.tags;
 		if (!settings.enabled) return;
 		const section = container.createEl('details', { cls: 'auto-anki-export-options auto-anki-tags' });
-		const summary = section.createEl('summary', { text: 'Tags: ' });
-		const list = summary.createSpan({ cls: 'auto-anki-tag-list' });
+		const summary = section.createEl('summary', { cls: 'setting-item-description', text: 'Tags: ' });
+		const list = summary.createSpan();
 		const update = (): void => showTags(list, noteTags(settings, run, this.tags.extra), 'none');
 		new Setting(section).setName('Extra tags for this export')
 			.setDesc('Starts with your extra tags. Changes apply to this export only; your settings stay the same.')

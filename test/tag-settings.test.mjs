@@ -136,7 +136,7 @@ describe('the Tags page', () => {
 		const { tab } = await openTags(withDefaultModel(settings => { settings.anki.tags = { ...DEFAULT_TAGS, enabled: true, extra: 'obsidian' }; }));
 		const codes = row(tab, 'Example').descEl.all().filter(el => el.tagName === 'code').map(el => el.text);
 		assert.deepEqual(codes, ['auto-anki::anthropic::claude-haiku-5-5', 'obsidian']);
-		assert.ok(row(tab, 'Example').descEl.all().filter(el => el.tagName === 'code').every(el => el.className === 'auto-anki-tag'), 'styled as code');
+		assert.ok(row(tab, 'Example').descEl.all().filter(el => el.tagName === 'code').every(el => el.className === 'auto-anki-inline-code'), 'styled as code');
 		const model = row(tab, 'Model').definition.desc.all().filter(el => el.tagName === 'code').map(el => el.text);
 		assert.deepEqual(model, ['auto-anki::<provider>::<model>', 'auto-anki::anthropic::<model>']);
 	});

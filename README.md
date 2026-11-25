@@ -31,7 +31,7 @@ Your notes are sent to the provider you choose when you generate cards. Nothing 
 5. Start Anki with AnkiConnect enabled, then open **Settings → Auto Anki → Anki**:
     - Set **AnkiConnect address** if needed. The default is `http://127.0.0.1:8765`, a full address, not just a port.
     - Under **Note types**, turn on the existing Anki note types the AI may generate. Use the refresh button beside **Note types** after you change the address or your note types in Anki. The field descriptions shown there come from Anki, so describe your fields in Anki if you want the AI to know what they are for.
-    - Under **Default deck**, choose the deck new notes start in. You can still pick another deck each time you export.
+    - Open **Deck Selection** to set your **Default deck** and optionally suggest a different deck for each note. You can still pick another deck each time you export.
 6. Open **Generation** to choose coverage, whether to send diagrams, and your extra instructions.
 7. Optionally, open **Anki → Tags** to tag new Anki notes (see [Tags](#tags)).
 8. Open a note and run one of the commands.

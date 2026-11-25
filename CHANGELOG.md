@@ -4,7 +4,13 @@ Notable changes to Auto Anki, newest first. Each release starts with a short sum
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the plugin uses [Semantic Versioning](https://semver.org/): a change in the first number (1.0.0) can mean you need to redo some setup, a change in the second (1.1.0) adds features, and a change in the third (1.1.1) fixes problems.
 
-## [1.1.0] - Unreleased
+## [1.2.0] - Unreleased
+
+- **Deck Selection:** The default deck moves to **Settings → Auto Anki → Anki → Deck Selection**. Your saved deck and tags stay the same.
+- **Deck template:** Suggest a deck from the vault, full folder path, immediate parent folder, or note name. If the suggested deck is missing, you can explicitly create it when exporting.
+- **Sort by name match:** Turn this on in **Deck Selection** to rank existing decks by shared words from the note or selection, without sending text or downloading a model.
+
+## [1.1.0] - 2026-11-23
 
 **In short:** Auto Anki can now tag the notes it adds to Anki, so you can find, compare or delete them later: for example, every note one model made. Tagging is off until you turn it on.
 
