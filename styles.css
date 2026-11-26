@@ -222,8 +222,7 @@ If your plugin does not need CSS, delete this file.
     padding-block: var(--size-4-1);
 }
 
-/* Tags and tag patterns, in settings and the deck step, look like code in a note. */
-.auto-anki-tag {
+.auto-anki-inline-code {
     font-family: var(--font-monospace);
     font-size: var(--code-size);
     color: var(--code-normal);
@@ -233,9 +232,8 @@ If your plugin does not need CSS, delete this file.
     overflow-wrap: anywhere;
 }
 
-/* The collapsed Tags title in the deck step lists every tag, in small text. */
-.auto-anki-tags .auto-anki-tag-list {
-    font-size: var(--font-ui-smaller);
+.auto-anki-picker .setting-item-description code {
+    font-size: inherit;
 }
 
 .auto-anki-instructions .setting-item {
@@ -277,6 +275,48 @@ If your plugin does not need CSS, delete this file.
 
 .deck-search {
     margin-bottom: var(--size-4-3);
+}
+
+.auto-anki-deck-preview-result {
+    margin-block-start: var(--size-4-4);
+}
+
+.auto-anki-picker .deck-option {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    overflow-wrap: anywhere;
+}
+
+.auto-anki-deck-badge {
+    flex: none;
+    margin-inline-start: auto;
+    padding: 0 var(--size-4-2);
+    border: 1px solid currentColor;
+    border-radius: 1em;
+    font-size: var(--font-ui-smaller);
+}
+
+.auto-anki-deck-picker .modal-content {
+    overflow-y: auto;
+}
+
+.auto-anki-deck-picker .modal-content > :not(.deck-options-container) {
+    flex-shrink: 0;
+}
+
+.auto-anki-deck-picker .modal-content > .deck-options-container {
+    min-height: 3rem;
+}
+
+.auto-anki-deck-status {
+    margin-block: var(--size-4-2);
+    overflow-wrap: anywhere;
+}
+
+.auto-anki-deck-status,
+.auto-anki-deck-status code {
+    white-space: normal;
 }
 
 .auto-anki-picker .question-options-container,

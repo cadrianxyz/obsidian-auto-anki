@@ -60,6 +60,7 @@ export class FakeElement {
 	appendText(t) { this.children.push(Object.assign(new FakeElement('#text'), { text: t })); }
 	appendChild(el) { this.children.push(el); return el; }
 	setText(value) { this.textContent = value; return this; }
+	setAttribute(name, value) { this.attrs[name] = String(value); }
 	empty() { this.children = []; this.text = ''; }
 	// Depth-first list of this element and everything inside it.
 	all() { return [this, ...this.children.flatMap((c) => (c.all ? c.all() : []))]; }
@@ -72,6 +73,7 @@ function applyOpts(el, opts) {
 	if (opts.text !== undefined) el.text = String(opts.text);
 	if (opts.cls) el.className = Array.isArray(opts.cls) ? opts.cls.join(' ') : opts.cls;
 	if (opts.href) el.attrs.href = opts.href;
+	if (opts.attr) Object.assign(el.attrs, opts.attr);
 }
 
 // Obsidian exposes window timers in its desktop renderer; Node supplies the test timers.

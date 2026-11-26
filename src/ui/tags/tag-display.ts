@@ -1,7 +1,7 @@
 // --- Showing tags ---
 
 /** Styled in styles.css: Obsidian only styles code inside notes, not in settings or dialogs. */
-const TAG_CLASS = 'auto-anki-tag';
+const INLINE_CODE_CLASS = 'auto-anki-inline-code';
 
 /** Shows each tag as code, so tags stand apart from the words around them. */
 export function showTags(el: HTMLElement, tags: readonly string[], empty: string): void {
@@ -9,7 +9,7 @@ export function showTags(el: HTMLElement, tags: readonly string[], empty: string
 	if (!tags.length) { el.appendText(empty); return; }
 	tags.forEach((tag, index) => {
 		if (index) el.appendText(' ');
-		el.createEl('code', { text: tag, cls: TAG_CLASS });
+		el.createEl('code', { text: tag, cls: INLINE_CODE_CLASS });
 	});
 }
 
@@ -17,7 +17,7 @@ export function showTags(el: HTMLElement, tags: readonly string[], empty: string
 export function describeTags(text: string): DocumentFragment {
 	return createFragment(fragment => {
 		text.split('`').forEach((part, index) => {
-			if (index % 2) fragment.createEl('code', { text: part, cls: TAG_CLASS });
+			if (index % 2) fragment.createEl('code', { text: part, cls: INLINE_CODE_CLASS });
 			else if (part) fragment.appendText(part);
 		});
 	});

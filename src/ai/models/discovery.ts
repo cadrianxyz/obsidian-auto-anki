@@ -17,7 +17,7 @@ interface DiscoveryResponse {
 }
 
 export type ModelDiscoveryRequest = (request: RequestUrlParam) => Promise<DiscoveryResponse>;
-export type ModelRefreshResult = { ok: true } | { ok: false; error: string };
+export type ModelRefreshResult = { ok: true } | { ok: false; summary: string; error: string };
 
 interface ProviderRefresh {
 	apiKey: string;
@@ -93,7 +93,7 @@ export class ModelDiscovery {
 		const pending = this.providerRefreshes.get(providerId);
 		if (apiKey && pending?.apiKey === apiKey) return pending.task;
 		pending?.cancel();
-		if (!apiKey) return Promise.resolve({ ok: false, error: `Add an API key for ${PROVIDER_NAMES[providerId]} before refreshing models.` });
+		if (!apiKey) return Promise.resolve({ ok: false, summary: 'No key on this device', error: `Add an API key for ${PROVIDER_NAMES[providerId]} before refreshing models.` });
 
 		const controller = new AbortController();
 		const cancel = (): void => controller.abort(new Error('Model discovery was superseded or cleared.'));
@@ -114,15 +114,16 @@ export class ModelDiscovery {
 				return { ok: true };
 			} catch (error: unknown) {
 				// SDK connection errors can wrap validation failures from the fetch boundary.
-								const local = [error, asRecord(error).cause].find(value => value instanceof SDKConfigurationError || value instanceof ModelListError);
-								if (local instanceof Error) return { ok: false, error: local.message };
+				const local = [error, asRecord(error).cause].find(value => value instanceof SDKConfigurationError || value instanceof ModelListError);
+				if (local instanceof Error) return { ok: false, summary: 'Model list unavailable', error: local.message };
 				const status = asRecord(error).status;
 				// Do not surface SDK messages: they may include credentials, request
 				// details, or arbitrary text echoed by a provider or proxy.
-				const message = controller.signal.aborted ? this.errorMessage(controller.signal.reason)
-					: typeof status === 'number' ? `${PROVIDER_NAMES[providerId]} could not list models (HTTP ${status}). Check your API key and provider access.`
-					: `${PROVIDER_NAMES[providerId]} could not list models. Check your connection and retry.`;
-				return { ok: false, error: message };
+				if (controller.signal.aborted) return { ok: false, summary: 'Refresh interrupted', error: this.errorMessage(controller.signal.reason) };
+				if (typeof status !== 'number') return { ok: false, summary: 'Connection failed', error: `${PROVIDER_NAMES[providerId]} could not list models. Check your connection and retry.` };
+				const summary = status === 401 ? 'API Key rejected' : status === 403 ? 'Access denied'
+					: status === 429 ? 'Rate limited' : 'Model list unavailable';
+				return { ok: false, summary, error: `${PROVIDER_NAMES[providerId]}: ${summary} (HTTP ${status}).` };
 			} finally {
 				window.clearTimeout(timer);
 				if (this.providerRefreshes.get(providerId)?.task === task) this.providerRefreshes.delete(providerId);
@@ -160,7 +161,7 @@ export class ModelDiscovery {
 				}
 				return { ok: true };
 			} catch (error: unknown) {
-				return { ok: false, error: this.errorMessage(error) };
+				return { ok: false, summary: 'Model metadata unavailable', error: this.errorMessage(error) };
 			} finally {
 				this.catalogRefresh = null;
 			}

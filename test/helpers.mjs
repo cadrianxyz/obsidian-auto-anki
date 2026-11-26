@@ -91,6 +91,7 @@ export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activ
 	const app = {
 		disk,
 		vault: readOnly('vault', NOTE_WRITERS, { adapter,
+			getName: () => 'Study',
 			async readBinary(file) {
 				fake.attachmentReads.push(file.path);
 				if (!(file.path in attachments)) throw new Error('Attachment missing');
@@ -105,6 +106,7 @@ export function makeDevice({ disk = makeDisk(), keychain = makeKeychain(), activ
 		workspace: {
 			activeNote,
 			file: { path: notePath, basename: notePath.split('/').at(-1).replace(/\.[^.]+$/, '') },
+			getActiveFile() { return this.activeNote === null ? null : this.file; },
 			getActiveViewOfType() {
 				return this.activeNote === null ? null : { data: this.activeNote, editor: makeEditor(''), file: this.file };
 			},
@@ -219,6 +221,11 @@ export function ankiServer({ decks = ['Default', 'Biology'], refuse = () => null
 	const types = structuredClone(noteTypes);
 	fake.ankiHandler = (body) => {
 		if (body.action === 'deckNames') return { json: { result: decks, error: null } };
+		if (body.action === 'createDeck') {
+			const { deck } = body.params;
+			if (!decks.includes(deck)) decks.push(deck);
+			return { json: { result: decks.indexOf(deck) + 1, error: null } };
+		}
 		if (body.action === 'modelNamesAndIds') return { json: { result: Object.fromEntries(Object.entries(types).map(([name, type]) => [name, type.id])), error: null } };
 		if (body.action === 'modelNames') return { json: { result: Object.keys(types), error: null } };
 		if (['modelFieldNames', 'modelTemplates', 'modelFieldDescriptions'].includes(body.action)) {

@@ -7,6 +7,7 @@ import { SettingsStore } from './settings/store';
 import { createModelSettings, type PluginSettings } from './settings/schema';
 import type { SourceNote } from './source-note/content';
 import { AnkiClient } from './anki/client';
+import { resolveDeckTemplate } from './anki/deck-template';
 import { getDestinations, verifyNoteType, NoteTypeDiscovery, readNoteType, readNoteTypeNames, type AnkiDestinations } from './anki/note-types';
 import { ExportModal, type ExportModel } from './ui/export-flow';
 import { getProviderApiKey, setProviderApiKey, type KeyMigrationResult } from './utils/api-key';
@@ -228,8 +229,10 @@ export default class AutoAnkiPlugin extends Plugin {
 		}
 		const selectedModel = models.find(choice => choice.providerId === providerId && choice.model.id === model.id)!;
 		const source: SourceNote = { markdown: text, path, title };
+		const deckTemplate = resolveDeckTemplate(snapshot.anki.deckTemplate, { vault: this.app.vault.getName(), path, title });
+		const deck = { defaultDeck: snapshot.anki.defaultDeck, template: deckTemplate, text, sortByMatch: snapshot.anki.sortDecksByMatch };
 		new ExportModal(this.app, this.generationStatus, source, selectedModel, models,
-			snapshot.anki.url, snapshot.anki.defaultDeck, snapshot.notes, snapshot.anki.tags, selection, () => this.prepareAnkiDestinations(snapshot.anki), async ({ providerId, model }, mode) => {
+			snapshot.anki.url, deck, snapshot.notes, snapshot.anki.tags, selection, () => this.prepareAnkiDestinations(snapshot.anki), async ({ providerId, model }, mode) => {
 				const current = this.settings.providers[providerId].models.find(saved => saved.id === model.id);
 				if (!current || current.capabilities?.outputMode === mode) return;
 				await this.updateSettings(settings => {
