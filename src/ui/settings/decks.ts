@@ -20,10 +20,10 @@ export class DeckSettingsPage {
 		if (!this.exampleEl) return;
 		const { app, settings } = this.plugin;
 		const activeFile = app.workspace.getActiveFile();
-		const note = activeFile?.path.toLowerCase().endsWith('.md') ? activeFile : undefined;
-		const path = note?.path ?? 'Computer Science/Operating Systems/Scheduling.md';
-		const result = resolveDeckTemplate(settings.anki.deckTemplate, { vault: app.vault.getName(), path, title: note?.basename ?? 'Scheduling' });
-		const source = note ? 'current note' : 'sample note';
+		const file = activeFile?.path.toLowerCase().endsWith('.md') ? activeFile : undefined;
+		const path = file?.path ?? 'Computer Science/Operating Systems/Scheduling.md';
+		const result = resolveDeckTemplate(settings.anki.deckTemplate, { vault: app.vault.getName(), path, title: file?.basename ?? 'Scheduling' });
+		const source = file ? 'current file' : 'sample file';
 		this.exampleEl.empty();
 		this.exampleEl.createDiv({ text: `Example using the ${source} “${path}”` });
 		const outcome = this.exampleEl.createDiv({ cls: 'auto-anki-deck-preview-result' });
@@ -39,7 +39,7 @@ export class DeckSettingsPage {
 	page(): SettingDefinitionItem {
 		const { anki } = this.plugin.settings;
 		return { type: 'page', name: 'Deck Selection', desc: 'Choose the default deck and optionally suggest a deck based on each note.', items: [
-			{ name: 'Default deck', desc: `Used when no template deck is available. Current: ${anki.defaultDeck}.`,
+			{ name: 'Default deck', desc: `Default anki deck to export cards. Current: ${anki.defaultDeck}.`,
 				render: setting => { setting.addButton(button => button.setButtonText('Choose deck…').setDisabled(!this.plugin.settingsStore.canSave)
 					.onClick(() => new DefaultDeckModal(this.plugin.app, anki.url, this.plugin.settings.anki.defaultDeck, async deck => {
 						await this.plugin.updateSettings(settings => { settings.anki.defaultDeck = deck; });

@@ -1,106 +1,59 @@
 # Obsidian Auto Anki
 
-Plugin for [Obsidian.md](https://obsidian.md/) that uses OpenAI or Claude to generate Anki notes from your Obsidian notes. Anki uses each note's note type to create one or more flashcards from them.
+Turn your [Obsidian](https://obsidian.md/) notes into [Anki](https://apps.ankiweb.net/) flashcards with AI (OpenAI or Claude).
 
-> The plugin **only works on desktop**.
+Open a note (or highlight part of it) and run a command. The AI writes Anki notes, you pick the ones you like, and they go straight into Anki. You don't need to change how you write your notes.
 
-> For provider, model, generation and note-type settings in detail, see the [setup guide](docs/model-discovery.md).
-
-The plugin adds two commands to Obsidian:
-- _Generate notes from current file_
-- _Generate notes from highlighted text_ (only in an open note in editing view; it needs selected text)
+> Auto Anki **only works on desktop**.
 
 ![command-palette-new-commands](media/command-palette-new-commands.png)
 
-## Plugin Requirements
+## What you need
 
-The following are required for the plugin to work:
-- Obsidian 1.13.1 or newer, on desktop
-- An API account and key for [OpenAI](https://platform.openai.com/api-keys) or [Claude](https://platform.claude.com/). API usage is billed by the provider; a ChatGPT or Claude chat subscription is not a substitute for API access
-- The [Anki](https://apps.ankiweb.net/) program, installed locally
-- [AnkiConnect](https://github.com/FooSoft/anki-connect), which exposes Anki's API for Obsidian to call
+- **Obsidian 1.13.1 or newer**, on desktop.
+- **Anki**, installed on your computer and open while you use the plugin.
+- **[AnkiConnect](https://ankiweb.net/shared/info/2055492159)**, an Anki add-on that lets Obsidian talk to Anki.
+- **An API key from [OpenAI](https://platform.openai.com/api-keys) or [Claude](https://platform.claude.com/).** An API key is like a password that lets the plugin use your AI account. Usage is billed by the provider, separately from a ChatGPT or Claude chat subscription, which doesn't include it.
 
-Your notes are sent to the provider you choose when you generate cards. Nothing is sent before you click **Generate Anki notes**.
+## Quick start
 
-## Plugin Setup
+1. In Obsidian, install **Auto Anki** from **Settings → Community plugins** and turn it on.
+2. In Anki, install AnkiConnect (**Tools → Add-ons → Get Add-ons**, code `2055492159`), then restart Anki.
+3. In Obsidian, open **Settings → Auto Anki**. Under **AI providers**, choose **OpenAI** or **Claude**, paste your API key and click **Save key**.
+4. On that same page, click **Manage models** (the gear icon beside **Your models**). Turn on at least one model and click **Save changes**.
+5. Open **Settings → Auto Anki → Anki**. Under **Note types**, choose which of your Anki note types the AI may use. **Basic** and **Cloze** are on to start.
+6. Open a note, press **Ctrl/Cmd + P**, and run **Auto Anki: Generate notes from current file**.
 
-1. Download and install the plugin (Options > Community Plugins)
-2. Make sure you have everything in [Plugin Requirements](#plugin-requirements)
-3. Open **Settings → Auto Anki**. Under **AI providers**, open **OpenAI** or **Claude**, enter that provider's API key and click **Save key**.
-4. On the provider's page, open **Manage models** (the settings icon beside **Your models**). Turn models on or off, then click **Save changes**; **Cancel** discards your changes. Only models that support text generation can be turned on (OpenAI's Responses API or Claude's Messages API). If there is no default yet, the first model you turn on becomes it. To change the default, use **Use as default model** on a model's page, or **Default model** on the main settings page. Disabling a model keeps its settings, so turning it back on restores them.
-5. Start Anki with AnkiConnect enabled, then open **Settings → Auto Anki → Anki**:
-    - Set **AnkiConnect address** if needed. The default is `http://127.0.0.1:8765`, a full address, not just a port.
-    - Under **Note types**, turn on the existing Anki note types the AI may generate. Use the refresh button beside **Note types** after you change the address or your note types in Anki. The field descriptions shown there come from Anki, so describe your fields in Anki if you want the AI to know what they are for.
-    - Open **Deck Selection** to set your **Default deck** and optionally suggest a different deck for each note. You can still pick another deck each time you export.
-6. Open **Generation** to choose coverage, whether to send diagrams, and your extra instructions.
-7. Optionally, open **Anki → Tags** to tag new Anki notes (see [Tags](#tags)).
-8. Open a note and run one of the commands.
+## How it works
 
-API keys are saved in Obsidian's Keychain on this device, not in your vault. The Keychain does not sync, so enter your provider keys once on each device. Obsidian encrypts Keychain secrets using the operating system's secret store when available; **Settings → Keychain** reports when it is unavailable.
+The plugin adds two commands:
+
+- **Generate notes from current file**: uses the whole open note.
+- **Generate notes from highlighted text**: uses only the text you've selected, in editing view.
+
+Each run has three steps:
+
+1. **Generate:** check the options and click **Generate Anki notes**.
+2. **Review:** tick the notes you want to keep.
+3. **Export:** choose a deck and click **Confirm and export**.
+
+## Guides
+
+- [Providers and models](docs/providers-and-models.md): add API keys, choose models, adjust model settings.
+- [Generating notes](docs/generating-notes.md): the generate, review and export steps, writing preferences, and images.
+- [Note types](docs/note-types.md): choose which kinds of Anki notes the AI writes.
+- [Deck selection](docs/deck-selection.md): choose a default deck, or suggest one from each note's folder.
+- [Tags](docs/tags.md): tag new Anki notes so you can find them later.
+
+## Privacy and safety
+
+- Nothing is sent anywhere until you click **Generate Anki notes**. Then your note's text (or the selected text) and its images go to the provider you chose.
+- API keys are kept in Obsidian's Keychain on this computer, not in your vault. They don't sync, so add your key again on each computer.
+- Auto Anki only **adds** notes to Anki. It never edits or deletes notes already there, and it never changes your Obsidian notes.
 
 ## Upgrading
 
-What changed in each version, and what to check after upgrading, is in the [changelog](CHANGELOG.md).
-
-## Tags
-
-Auto Anki can tag the Anki notes it adds, so you can later find, compare or delete them in Anki: for example, every note one model made. **Tagging is off until you turn it on** in **Settings → Auto Anki → Anki → Tags**, with **Tag Anki notes**. While it's off, new notes get no tags, and the other options on the page are greyed out.
-
-Once tagging is on, choose which tags to add:
-
-| Option | Default | Adds | Example |
-|---|---|---|---|
-| **Model** | on | The provider and model that made the note | `auto-anki::anthropic::claude-haiku-5-5` |
-| **Reasoning effort** | off | The reasoning effort chosen for that run. `default` means the model used its own default | `auto-anki::effort::high` |
-| **Prompt version** | off | The version of the built-in note-writing instructions. It ends in `-edited` if you replaced them with your own (**Generation → Advanced**); extra instructions don't count | `auto-anki::prompt::1.0.0`, `auto-anki::prompt::1.0.0-edited` |
-| **Prefix tags with `auto-anki::`** | on | Puts `auto-anki::` in front of the three tags above | Off: `anthropic::claude-haiku-5-5` |
-| **Extra tags** | empty | Your own tags, for every new note. Separate them with spaces; use `::` for nested tags | `obsidian uni::cs101` |
-
-The provider in the model tag is its ID (`openai` or `anthropic`), not the name shown in settings, so it never changes. The page's **Example** line shows the tags one new note would get with your default model.
-
-**The prefix keeps the plugin's tags together.** With it on, searching `tag:auto-anki::*` in Anki's browser finds every note these tags were added to, and `tag:auto-anki::anthropic::*` finds every note a Claude model made. With it off, tags such as `effort::high` can mix with your own tags of the same name. The prefix is never added to your extra tags.
-
-**Changing tags for one export.** While tagging is on, the deck step has a collapsed **Tags** section. Its title lists the tags the notes will get. Open it to edit **Extra tags for this export**: it starts with your extra tags, and changes apply to that export only. Your settings stay the same.
-
-A few rules:
-
-- Tags are added only when a note is created. Auto Anki never changes the tags of notes already in Anki.
-- The tags come from the moment you click **Generate**. Changing tag settings while you review doesn't change the tags of those notes.
-- Spaces in a model ID become `_`, and `::` becomes `-`, so a model ID can't add extra levels to Anki's tag list. Your extra tags are kept as you wrote them, except that empty levels are dropped (`a::::b` becomes `a::b`). A tag repeated, even in different capitals, is added once, since Anki treats those as the same tag.
-- Earlier versions tagged every note `auto-gpt-imported`. That tag is no longer added; notes that already have it keep it.
-
-## Feature Details
-
-#### Generating Notes from the Current File (Command: _Generate notes from current file_)
-
-The command opens a dialog for the open note. The dialog says what will be sent: the note's text (with frontmatter and `%%comments%%` removed) and its diagrams.
-
-1. Choose the coverage, the note types, and optionally a model, reasoning effort, a maximum number of notes, or extra instructions. These apply to this run only; your saved settings don't change.
-2. Click **Generate Anki notes**. The status bar shows that generation is running.
-3. In the review, each note's fields are shown as plain text. Tick the notes you want (**Select all** and **Deselect all** help), then click **Confirm selection**.
-4. Choose a deck, then click **Confirm and export**. The default deck starts selected.
-
-Anki adds the notes you chose. Notes that Anki refuses, for example because they are duplicates, stay in the review so you can export them again. The plugin only adds notes; it never edits or deletes notes that are already in Anki.
-
-For a long note, the run may take a while.
-
-#### Generating Notes from Highlighted Text (Command: _Generate notes from highlighted text_)
-
-This command works the same way, but uses only the text you have selected. It needs an open note in editing view, with text selected. Only images embedded in the selected text are sent.
-
-## Diagrams and Images
-
-- Images in the text are sent when **Send diagrams** is on and the selected model accepts images. At most 20 diagrams are sent, and large images are scaled down first.
-- Supported formats are PNG, JPEG, GIF, WebP, BMP and AVIF.
-- A GIF is analysed as its first frame only. Anki keeps the original animated file.
-- A diagram used in a card is stored once in Anki's media. The file name comes from the image's content, so exporting the same note again does not store a second copy.
-
-## Anki Notes
-
-- Each field is written in Markdown and shown in Anki with its formatting. Inline maths `$…$` and display maths `$$…$$` are shown with Anki's built-in MathJax. Raw HTML is shown as text, not run.
-- Cloze deletions such as `{{c1::…}}` are kept as written.
-- The plugin only uses the note types you enabled, and it fills their fields as Anki defines them.
-- If the deck you chose is missing, Anki's **Default** deck is used. The plugin never creates decks.
+The [changelog](CHANGELOG.md) lists what changed in each version and anything you need to check after upgrading.
 
 ## Motivation
 
@@ -110,32 +63,8 @@ I looked at other [similar plugins](https://github.com/Pseudonium/Obsidian_to_An
 
 I consider myself a complete beginner when it comes to Spaced Repetition, Anki, or the general world of learning techniques, so I am always very open to suggestions, discussions, or any comments about the topic!
 
-## Issues, Discussion, etc
+## Issues and ideas
 
-I keep track of all things related to this plugin mostly in [issues](https://github.com/cadrianxyz/obsidian-auto-anki/issues). Feel free to report bugs and/or requests there!
+Report bugs and request features in [GitHub issues](https://github.com/cadrianxyz/obsidian-auto-anki/issues).
 
-## Development
-
-Requires Node.js 24, the version the release workflow uses.
-
-```bash
-npm install
-npm run dev     # rebuilds main.js on every change
-npm run build   # type-checks, then makes a production build
-npm run lint    # checks the code with ESLint, including Obsidian's own plugin-review rules
-npm test        # runs the tests
-```
-
-The tests (in `test/`) load the plugin in Node against a stand-in for Obsidian, with a fake Keychain, fake OpenAI and Claude APIs and a fake AnkiConnect, so they need no vault, no API key and no Anki. They cover moving the API key out of `data.json` (including synced vaults and a Keychain that fails), reading settings saved by every earlier version, the export flow with its error messages, image handling and field rendering.
-
-To test in a vault, point `OBSIDIAN_PLUGIN_DIR` at the plugin's folder inside that vault. Every build is then copied there (`main.js`, `manifest.json`, `styles.css`):
-
-```bash
-OBSIDIAN_PLUGIN_DIR=~/path/to/vault/.obsidian/plugins/auto-anki npm run dev
-```
-
-Then reload the plugin in Obsidian (Settings > Community Plugins), or install the [Hot Reload](https://github.com/pjeby/hot-reload) plugin to have it reloaded after every build.
-
-### Releasing
-
-Add a `## [<new-version>]` section to `CHANGELOG.md` first: the release workflow copies it into the GitHub release, and stops without releasing if it's missing. `npm version <new-version>` updates `manifest.json` and `versions.json`. Push the tag (`git push origin <new-version>`): the release workflow builds the plugin and attaches `main.js`, `manifest.json` and `styles.css` to a GitHub release with that tag. The workflow does not run `npm test`, so run it before tagging. Push the branch afterwards, since Obsidian reads `manifest.json` from the default branch to decide which release to install.
+Want to work on the plugin itself? See [CONTRIBUTING.md](CONTRIBUTING.md).

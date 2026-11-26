@@ -1,11 +1,45 @@
-## Deck Selection
+# Deck selection
 
-Open **Settings → Auto Anki → Anki → Deck Selection**. Leave **Deck template** blank to start each export with your default deck. To suggest a deck based on the note'smetadat, use `{{vault}}` for the vault name, `{{folder}}` for the full folder path, `{{lastFolder}}` for the immediate parent folder, and `{{note}}` for the note name without `.md`.
+When you export, you choose which Anki deck the new notes go into. Auto Anki can pick a starting deck for you, either one fixed **default deck** or a deck based on where the note sits in your vault.
 
-For example, if your vault is `Study` and the note is `Computer Science/Operating Systems/Scheduling.md`, `{{vault}}::{{folder}}` suggests `Study::Computer Science::Operating Systems`, while `{{vault}}::{{lastFolder}}` suggests `Study::Operating Systems`. Folder names keep their spaces and punctuation; only `/` changes to `::`. For a note at the vault root, an empty folder level is omitted. A selection uses the path of the note it came from.
+You can always choose a different deck when you export.
 
-The **Deck template preview** names the current note it uses, or shows a sample note when none is open. It shows what the template would suggest without checking Anki.
+Open **Settings → Auto Anki → Anki → Deck Selection**.
 
-- If the full deck exists, it starts selected. If only a parent deck exists, it isn't a match.
-- If the deck is missing, the picker keeps the default (or its fallback) selected and offers **Create new deck: [full name]**. The deck is created only when you click **Create deck and export**. You can instead choose any existing deck.
-- Turn on **Sort by name match** in **Deck Selection** to rank existing decks against the template result, or your default deck if the template gives no result. An exact match comes first, followed by decks sharing more words with the target. Words from the note or highlighted text break ties. Sorting doesn't send text anywhere or download a model.
+## Default deck
+
+Click **Choose deck…** and pick a deck. Exports start with this deck selected, unless the deck template (below) suggests another.
+
+## Deck template
+
+A **deck template** suggests a deck based on the note you're working on. Type a deck name using these placeholders, with `::` between deck levels, the same way Anki writes subdecks:
+
+| Placeholder | Becomes |
+|---|---|
+| `{{vault}}` | Your vault's name |
+| `{{folder}}` | The note's full folder path |
+| `{{lastFolder}}` | Only the folder the note is directly in |
+| `{{note}}` | The note's name |
+
+For example, with the vault `Study` and the note `Computer Science/Operating Systems/Scheduling.md`:
+
+| Template | Suggested deck |
+|---|---|
+| `{{vault}}::{{folder}}` | `Study::Computer Science::Operating Systems` |
+| `{{vault}}::{{lastFolder}}` | `Study::Operating Systems` |
+| `Notes::{{note}}` | `Notes::Scheduling` |
+
+Leave the template empty to always start with your default deck.
+
+**Deck template preview** shows what your template would suggest for the open note, or for a sample note if none is open.
+
+### When the suggested deck doesn't exist
+
+- **If the deck exists in Anki**, it's selected for you.
+- **If it doesn't exist**, your default deck stays selected, and the deck list offers **Create new deck: …**. Choose it, and the deck is created when you click **Create deck and export**. Auto Anki never creates a deck unless you choose this.
+
+## Sort by name match
+
+Turn on **Sort by name match** to list the decks most like the suggested deck first (or your default deck, if there's no template). An exact match comes first, then decks with the most words in common. Words from your note help break ties.
+
+Sorting happens on your computer. Nothing is sent anywhere.

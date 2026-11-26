@@ -478,7 +478,6 @@ export class AnkiDeckModal extends Modal {
 					this.updateButtons();
 				},
 			});
-			this.renderTags(contentEl);
 			const target = this.deck.template.deck;
 			if (this.deck.sortByMatch || target) {
 				const status = contentEl.createDiv({ cls: 'setting-item-description auto-anki-deck-status' });
@@ -488,6 +487,7 @@ export class AnkiDeckModal extends Modal {
 					status.createEl('code', { text: target, cls: 'auto-anki-inline-code' });
 				}
 			}
+			this.renderTags(contentEl);
 		}
 
 		const footer = new Setting(contentEl).addButton(button => {

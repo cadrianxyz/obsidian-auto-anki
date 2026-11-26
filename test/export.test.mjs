@@ -824,7 +824,7 @@ describe('what the user is told when something goes wrong', () => {
 	});
 });
 
-describe('template decks and local matching', () => {
+describe('deck templates and local matching', () => {
 	const path = 'Computer Science/Operating Systems/Scheduling.md';
 	const target = 'Computer Science::Operating Systems';
 	async function picker({ template = '{{folder}}', selection, sortByMatch = false, defaultDeck = 'Default' } = {}) {
